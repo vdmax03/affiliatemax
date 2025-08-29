@@ -35,6 +35,3 @@ class Util {
         return ((int)$m[1]) * 3600 + ((int)$m[2]) * 60 + (float)$m[3];
     }
 }
-
-?>
-
