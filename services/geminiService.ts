@@ -42,6 +42,18 @@ const pollOperation = async (operation: any): Promise<any> => {
   return currentOperation;
 };
 
+// Helper to describe an image concisely
+const describeImageConcise = async (imageBase64: string): Promise<string> => {
+    const ai = getAiClient();
+    const imagePart = { inlineData: { mimeType: 'image/png', data: imageBase64 } };
+    const prompt = "Describe the main product in this image concisely, in Indonesian. For example: 'sepasang sepatu kets putih' or 'sebotol serum perawatan kulit berwarna pink'.";
+    const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash', // Use gemini-2.5-flash for text analysis
+        contents: { parts: [imagePart, { text: prompt }] },
+    });
+    return response.text.trim();
+};
+
 export const generateVisualPrompt = async (imageBase64: string): Promise<string[]> => {
     try {
         const ai = getAiClient();
@@ -257,19 +269,10 @@ export const generateAudioFromText = async (text: string): Promise<{ base64Audio
 };
 
 
-export const generateImageVariations = async (imageBase64: string, aspectRatio: '16:9' | '9:16'): Promise<{ style: string, base64: string, dataUrl: string }[]> => {
+export const generateImageVariations = async (imageBase64: string, aspectRatio: '1:1' | '16:9' | '9:16'): Promise<{ style: string, base64: string, dataUrl: string }[]> => {
     try {
         const ai = getAiClient();
-        const analysisPrompt = "Describe the product in this image concisely for an image generation prompt. For example: 'a pair of white sneakers' or 'a bottle of pink skincare serum'.";
-        
-        const imagePart = { inlineData: { mimeType: 'image/png', data: imageBase64 } };
-        
-        const analysisResponse = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: { parts: [imagePart, {text: analysisPrompt}] },
-        });
-
-        const description = analysisResponse.text.trim();
+        const description = await describeImageConcise(imageBase64); // Use helper
 
         const styles: { name: string, prompt: string }[] = [
             { 
@@ -290,19 +293,30 @@ export const generateImageVariations = async (imageBase64: string, aspectRatio: 
             }
         ];
         
-
         const imagePromises = styles.map(async (style) => {
-            const response = await ai.models.generateImages({
-                model: 'imagen-3.0-generate-002',
-                prompt: style.prompt,
-                config: {
-                    numberOfImages: 1,
-                    outputMimeType: 'image/jpeg',
-                    aspectRatio,
-                },
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash-image-preview',
+                contents: [{
+                    role: 'user',
+                    parts: [
+                        { inlineData: { mimeType: 'image/png', data: imageBase64 } },
+                        { text: style.prompt }
+                    ],
+                }],
+                // imageGenerationConfig removed as it's not a known property for GenerateContentParameters
+                // aspectRatio will be handled by the model's default or inferred from prompt/input
             });
-            const base64ImageBytes: string = response.generatedImages[0].image.imageBytes;
-            const imageUrl = `data:image/jpeg;base64,${base64ImageBytes}`;
+
+            const generatedImagePart = response.candidates?.[0]?.content?.parts?.find(
+                (p) => p.inlineData && p.inlineData.mimeType.startsWith('image/')
+            );
+
+            if (!generatedImagePart?.inlineData) {
+                throw new Error('No image data received from Gemini for variation.');
+            }
+
+            const base64ImageBytes: string = generatedImagePart.inlineData.data;
+            const imageUrl = `data:${generatedImagePart.inlineData.mimeType};base64,${base64ImageBytes}`;
             return { style: style.name, base64: base64ImageBytes, dataUrl: imageUrl };
         });
 
@@ -313,7 +327,7 @@ export const generateImageVariations = async (imageBase64: string, aspectRatio: 
     }
 };
 
-export const generateCombinedImage = async (productBase64: string, logoBase64: string, avatarBase64: string, aspectRatio: '16:9' | '9:16'): Promise<{ base64: string, dataUrl: string }> => {
+export const generateSceneComposition = async (productBase64: string, logoBase64: string, avatarBase64: string, aspectRatio: '1:1' | '16:9' | '9:16'): Promise<{ base64: string, dataUrl: string }> => {
     try {
         const ai = getAiClient();
         const productPart = { inlineData: { mimeType: 'image/png', data: productBase64 } };
@@ -330,22 +344,35 @@ export const generateCombinedImage = async (productBase64: string, logoBase64: s
         });
         const combinedPrompt = promptGenResponse.text;
         
-        const imageResponse = await ai.models.generateImages({
-            model: 'imagen-3.0-generate-002',
-            prompt: combinedPrompt,
-            config: {
-                numberOfImages: 1,
-                outputMimeType: 'image/jpeg',
-                aspectRatio,
-            },
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash-image-preview',
+            contents: [{
+                role: 'user',
+                parts: [
+                    productPart,
+                    logoPart,
+                    avatarPart,
+                    { text: combinedPrompt }
+                ],
+            }],
+            // imageGenerationConfig removed as it's not a known property for GenerateContentParameters
+            // aspectRatio will be handled by the model's default or inferred from prompt/input
         });
 
-        const base64ImageBytes: string = imageResponse.generatedImages[0].image.imageBytes;
-        const imageUrl = `data:image/jpeg;base64,${base64ImageBytes}`;
+        const generatedImagePart = response.candidates?.[0]?.content?.parts?.find(
+            (p) => p.inlineData && p.inlineData.mimeType.startsWith('image/')
+        );
+
+        if (!generatedImagePart?.inlineData) {
+            throw new Error('No image data received from Gemini for scene composition.');
+        }
+
+        const base64ImageBytes: string = generatedImagePart.inlineData.data;
+        const imageUrl = `data:${generatedImagePart.inlineData.mimeType};base64,${base64ImageBytes}`;
         return { base64: base64ImageBytes, dataUrl: imageUrl };
     } catch (error) {
-        console.error("Gemini Combined Image Error:", error);
-        throw new Error(`Combined image generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        console.error("Gemini Scene Composition Error:", error);
+        throw new Error(`Scene composition failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
 };
 
@@ -365,18 +392,29 @@ export const generateAvatar = async (imageBase64: string): Promise<{ base64: str
         // Step 2: Use the description to generate the avatar.
         const avatarPrompt = `A cute, full-body, chibi-style cartoon character wearing this outfit: ${outfitDescription}. The background must be a solid, neutral gray color. The character should be smiling and waving.`;
         
-        const response = await ai.models.generateImages({
-            model: 'imagen-3.0-generate-002',
-            prompt: avatarPrompt,
-            config: {
-                numberOfImages: 1,
-                outputMimeType: 'image/png',
-                aspectRatio: '1:1',
-            },
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash-image-preview',
+            contents: [{
+                role: 'user',
+                parts: [
+                    imagePart,
+                    { text: avatarPrompt }
+                ],
+            }],
+            // imageGenerationConfig removed as it's not a known property for GenerateContentParameters
+            // aspectRatio will be handled by the model's default or inferred from prompt/input
         });
 
-        const base64ImageBytes: string = response.generatedImages[0].image.imageBytes;
-        const imageUrl = `data:image/png;base64,${base64ImageBytes}`;
+        const generatedImagePart = response.candidates?.[0]?.content?.parts?.find(
+            (p) => p.inlineData && p.inlineData.mimeType.startsWith('image/')
+        );
+
+        if (!generatedImagePart?.inlineData) {
+            throw new Error('No image data received from Gemini for avatar.');
+        }
+
+        const base64ImageBytes: string = generatedImagePart.inlineData.data;
+        const imageUrl = `data:${generatedImagePart.inlineData.mimeType};base64,${base64ImageBytes}`;
         return { base64: base64ImageBytes, dataUrl: imageUrl };
     } catch (error) {
         console.error("Gemini Avatar Error:", error);
@@ -390,24 +428,157 @@ export const generateLogo = async (logoName: string): Promise<{ base64: string, 
         const ai = getAiClient();
         const prompt = `Create a modern, minimalist, clean typography-based or monogram logo for a brand named "${logoName}". The logo must be on a solid plain white background. The design should be simple, elegant, and professional. Black and white color scheme.`;
 
-        const response = await ai.models.generateImages({
-            model: 'imagen-3.0-generate-002',
-            prompt,
-            config: {
-                numberOfImages: 1,
-                outputMimeType: 'image/png',
-                aspectRatio: '1:1',
-            },
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash-image-preview',
+            contents: [{
+                role: 'user',
+                parts: [{ text: prompt }],
+            }],
+            // imageGenerationConfig removed as it's not a known property for GenerateContentParameters
+            // aspectRatio will be handled by the model's default or inferred from prompt/input
         });
 
-        const base64ImageBytes: string = response.generatedImages[0].image.imageBytes;
-        const imageUrl = `data:image/png;base64,${base64ImageBytes}`;
+        const generatedImagePart = response.candidates?.[0]?.content?.parts?.find(
+            (p) => p.inlineData && p.inlineData.mimeType.startsWith('image/')
+        );
+
+        if (!generatedImagePart?.inlineData) {
+            throw new Error('No image data received from Gemini for logo.');
+        }
+
+        const base64ImageBytes: string = generatedImagePart.inlineData.data;
+        const imageUrl = `data:${generatedImagePart.inlineData.mimeType};base64,${base64ImageBytes}`;
         return { base64: base64ImageBytes, dataUrl: imageUrl };
     } catch (error) {
         console.error("Gemini Logo Error:", error);
         throw new Error(`Logo generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
 };
+
+export const generateShopTheLookFlatLay = async (image1Base64: string, image2Base64: string, aspectRatio: '1:1' | '16:9' | '9:16'): Promise<{ base64: string, dataUrl: string }> => {
+    try {
+        const ai = getAiClient();
+        const product1Description = await describeImageConcise(image1Base64);
+        const product2Description = await describeImageConcise(image2Base64);
+
+        const imagePart1 = { inlineData: { mimeType: 'image/png', data: image1Base64 } };
+        const imagePart2 = { inlineData: { mimeType: 'image/png', data: image2Base64 } };
+
+        const prompt = `Create a new composite product photo by combining the items from the provided images. Take the ${product1Description} from Image 1, and the ${product2Description} from Image 2. Arrange them in a clean flat lay style on a minimalist white surface. Ensure the lighting is soft and even, highlighting both products equally.`;
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash-image-preview',
+            contents: [{
+                role: 'user',
+                parts: [
+                    imagePart1,
+                    imagePart2,
+                    { text: prompt }
+                ],
+            }],
+            // imageGenerationConfig removed as it's not a known property for GenerateContentParameters
+            // aspectRatio will be handled by the model's default or inferred from prompt/input
+        });
+
+        const generatedImagePart = response.candidates?.[0]?.content?.parts?.find(
+            (p) => p.inlineData && p.inlineData.mimeType.startsWith('image/')
+        );
+
+        if (!generatedImagePart?.inlineData) {
+            throw new Error('No image data received from Gemini for Shop-the-Look Flat Lay.');
+        }
+
+        const base64ImageBytes: string = generatedImagePart.inlineData.data;
+        const imageUrl = `data:${generatedImagePart.inlineData.mimeType};base64,${base64ImageBytes}`;
+        return { base64: base64ImageBytes, dataUrl: imageUrl };
+    } catch (error) {
+        console.error("Gemini Shop-the-Look Flat Lay Error:", error);
+        throw new Error(`Shop-the-Look Flat Lay generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+};
+
+// New function for Text to Image generation
+export const generateImageFromText = async (prompt: string, aspectRatio: '1:1' | '16:9' | '9:16'): Promise<{ base64: string, dataUrl: string }> => {
+    try {
+        const ai = getAiClient();
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash-image-preview',
+            contents: [{
+                role: 'user',
+                parts: [{ text: prompt }],
+            }],
+            // imageGenerationConfig removed as it's not a known property for GenerateContentParameters
+            // aspectRatio will be handled by the model's default or inferred from prompt/input
+        });
+
+        const generatedImagePart = response.candidates?.[0]?.content?.parts?.find(
+            (p) => p.inlineData && p.inlineData.mimeType.startsWith('image/')
+        );
+
+        if (!generatedImagePart?.inlineData) {
+            throw new Error('No image data received from Gemini for text-to-image generation.');
+        }
+
+        const base64ImageBytes: string = generatedImagePart.inlineData.data;
+        const imageUrl = `data:${generatedImagePart.inlineData.mimeType};base64,${base64ImageBytes}`;
+        return { base64: base64ImageBytes, dataUrl: imageUrl };
+    } catch (error) {
+        console.error("Gemini Text-to-Image Generation Error:", error);
+        throw new Error(`Text-to-Image generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+};
+
+// New function for Image to Image generation
+export const generateImageToImage = async (imageBase64: string, prompt: string, aspectRatio: '1:1' | '16:9' | '9:16'): Promise<{ base64: string, dataUrl: string }> => {
+    try {
+        const ai = getAiClient();
+        const fullPrompt = `Based on the provided image, generate a new image with the following modifications: ${prompt}. The output must be only the modified image.`;
+        
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash-image-preview',
+            contents: [{
+                role: 'user',
+                parts: [
+                    { inlineData: { mimeType: 'image/png', data: imageBase64 } },
+                    { text: fullPrompt }
+                ],
+            }],
+            // imageGenerationConfig removed as it's not a known property for GenerateContentParameters
+            // aspectRatio will be handled by the model's default or inferred from prompt/input
+        });
+
+        const candidate = response.candidates?.[0];
+
+        if (!candidate) {
+            throw new Error('No candidate response received from Gemini. The prompt may have been blocked by safety filters.');
+        }
+
+        const generatedImagePart = candidate.content?.parts?.find(
+            (p) => p.inlineData && p.inlineData.mimeType.startsWith('image/')
+        );
+
+        if (!generatedImagePart?.inlineData) {
+            const textResponse = response.text;
+            const finishReason = candidate.finishReason;
+            let errorMessage = 'No image data received from Gemini for image-to-image generation.';
+            if (finishReason) {
+                errorMessage += ` Reason: ${finishReason}.`;
+            }
+            if (textResponse) {
+                errorMessage += ` The model responded with text: "${textResponse}"`;
+            }
+            throw new Error(errorMessage);
+        }
+
+        const base64ImageBytes: string = generatedImagePart.inlineData.data;
+        const imageUrl = `data:${generatedImagePart.inlineData.mimeType};base64,${base64ImageBytes}`;
+        return { base64: base64ImageBytes, dataUrl: imageUrl };
+    } catch (error) {
+        console.error("Gemini Image-to-Image Generation Error:", error);
+        throw new Error(`Image-to-Image generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+};
+
 
 export const generateVideo = async (prompt: string, imageBase64: string | null, aspectRatio: '16:9' | '9:16'): Promise<string> => {
   if (!prompt) {

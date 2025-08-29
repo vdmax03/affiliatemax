@@ -1,0 +1,6 @@
+Options -Indexes
+
+# If served from Apache, allow access to storage for downloads (adjust as needed)
+RewriteEngine On
+RewriteRule ^storage/ - [L]
+

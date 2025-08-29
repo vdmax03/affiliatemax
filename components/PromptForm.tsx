@@ -1,179 +1,250 @@
-
 import React, { useState, useCallback, useRef } from 'react';
-import { UploadIcon } from './icons/UploadIcon';
-import { SparklesIcon } from './icons/SparklesIcon';
-import { DownloadIcon } from './icons/DownloadIcon';
-import { SoundWaveIcon } from './icons/SoundWaveIcon';
-import { ExternalLinkIcon } from './icons/ExternalLinkIcon';
+import { UploadIcon, SparklesIcon, DownloadIcon, SoundWaveIcon, ExternalLinkIcon } from '../src/icons_fixed';
+import { ImageUploadBox } from './ImageUploadBox';
+import { PromptTutorial } from './PromptTutorial';
 import {
   generateAdNarrative,
   generateImageVariations,
   generateAvatar,
   generateLogo,
   generateVisualPrompt,
-  generateCombinedImage,
+  generateSceneComposition,
+  generateShopTheLookFlatLay,
   generateAudioFromText,
+  generateImageFromText,
+  generateImageToImage,
 } from '../services/geminiService';
 import {
   generateAudioWithElevenLabs,
   getAvailableVoices,
-  getVoiceName,
 } from '../services/elevenlabsService';
 
 interface PromptFormProps {
-  // FIX: Removed apiKey from onSubmit signature as it's handled by the service.
-  onSubmit: (prompt: string, imageBase64: string | null, aspectRatio: '16:9' | '9:16') => void;
+  onSubmit: (prompt: string, imageBase64: string | null, videoOutputAspectRatio: '16:9' | '9:16') => void;
   isLoading: boolean;
 }
 
 type Asset = {
     id: string;
-    type: 'original' | 'variation' | 'avatar' | 'logo';
+    type: 'original' | 'variation' | 'avatar' | 'logo' | 'secondary_original' | 'combined_shop_the_look' | 'text_to_image' | 'image_to_image';
     preview: string;
     base64: string;
     label: string;
+    role?: 'master' | 'secondary';
 };
 
 export const PromptForm: React.FC<PromptFormProps> = ({ onSubmit, isLoading }) => {
-  // REMOVED: All state and logic for managing the API key has been removed from the component.
+  const [generationMode, setGenerationMode] = useState<'imageToVideo' | 'textToImage'>('imageToVideo');
   const [videoPrompt, setVideoPrompt] = useState('');
   const [videoPromptVariations, setVideoPromptVariations] = useState<string[]>([]);
   const [audioScript, setAudioScript] = useState('');
   const [logoName, setLogoName] = useState('');
+  const [textImagePrompt, setTextImagePrompt] = useState('');
+  const [imageToImagePrompt, setImageToImagePrompt] = useState('');
   
-  const [imageAssets, setImageAssets] = useState<Asset[]>([]);
-  const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
+  const [masterImageAssets, setMasterImageAssets] = useState<Asset[]>([]);
+  const [secondaryImageAssets, setSecondaryImageAssets] = useState<Asset[]>([]);
+  const [selectedMasterAssetId, setSelectedMasterAssetId] = useState<string | null>(null);
+  const [selectedSecondaryAssetId, setSelectedSecondaryAssetId] = useState<string | null>(null);
   
-  const [aspectRatio, setAspectRatio] = useState<'16:9' | '9:16'>('9:16');
-  const [variationAspectRatio, setVariationAspectRatio] = useState<'16:9' | '9:16'>('9:16');
+  const [videoOutputAspectRatio, setVideoOutputAspectRatio] = useState<'16:9' | '9:16'>('9:16');
+  const [imageOutputAspectRatio, setImageOutputAspectRatio] = useState<'1:1' | '16:9' | '9:16'>('9:16');
 
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const [selectedVoice, setSelectedVoice] = useState('JBFqnCBsd6RMkjVDRZzb'); // Default Indonesian Female
+  const [selectedVoice, setSelectedVoice] = useState('JBFqnCBsd6RMkjVDRZzb');
   const [useElevenLabs, setUseElevenLabs] = useState(false);
   
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const masterFileInputRef = useRef<HTMLInputElement>(null);
+  const secondaryFileInputRef = useRef<HTMLInputElement>(null);
 
   const [isGenerating, setIsGenerating] = useState({
       prompts: false,
       variations: false,
       avatar: false,
       logo: false,
-      combination: false,
+      sceneComposition: false,
+      shopTheLook: false,
       audio: false,
+      textToImage: false,
+      imageToImage: false,
   });
   const [error, setError] = useState<string | null>(null);
 
-  // REMOVED: useEffect for loading API key from localStorage is no longer needed.
-
-  const handleImageChange = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleMasterImageChange = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => {
         const dataUrl = reader.result as string;
         const base64String = dataUrl.split(',')[1];
-        const newAsset: Asset = { id: `original-${Date.now()}`, type: 'original', preview: dataUrl, base64: base64String, label: 'ORIGINAL' };
+        const newAsset: Asset = { id: `master-original-${Date.now()}`, type: 'original', preview: dataUrl, base64: base64String, label: 'MASTER ORIGINAL', role: 'master' };
         
-        setImageAssets([newAsset]);
-        setSelectedAssetId(newAsset.id);
+        setMasterImageAssets([newAsset]);
+        setSelectedMasterAssetId(newAsset.id);
         setVideoPrompt('');
         setVideoPromptVariations([]);
         setAudioScript('');
         setAudioUrl(null);
-        
-        setIsGenerating(prev => ({ ...prev, prompts: true }));
         setError(null);
-        // FIX: Removed apiKey from service calls.
-        Promise.all([
-            generateVisualPrompt(base64String),
-            generateAdNarrative(base64String)
-        ]).then(([visuals, narrative]) => {
-            setVideoPromptVariations(visuals);
-            setVideoPrompt(visuals[0] || '');
-            setAudioScript(narrative);
-        }).catch(err => setError(`Could not generate prompts: ${err.message}`))
-        .finally(() => setIsGenerating(prev => ({ ...prev, prompts: false })));
+        // No automatic prompt/script generation here, user will click "Generate Prompts & Script"
       };
       reader.readAsDataURL(file);
+    } else {
+        setMasterImageAssets([]);
+        setSelectedMasterAssetId(null);
+        setVideoPrompt('');
+        setVideoPromptVariations([]);
+        setAudioScript('');
+        setAudioUrl(null);
     }
   }, []);
 
-  const handleGenerateVariations = async () => {
-    const originalImage = imageAssets.find(a => a.type === 'original');
+  const handleSecondaryImageChange = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const dataUrl = reader.result as string;
+        const base64String = dataUrl.split(',')[1];
+        const newAsset: Asset = { id: `secondary-original-${Date.now()}`, type: 'secondary_original', preview: dataUrl, base64: base64String, label: 'SECONDARY ORIGINAL', role: 'secondary' };
+        
+        setSecondaryImageAssets([newAsset]);
+        setSelectedSecondaryAssetId(newAsset.id);
+      };
+      reader.readAsDataURL(file);
+    } else {
+        setSecondaryImageAssets([]);
+        setSelectedSecondaryAssetId(null);
+    }
+  }, []);
+
+  const handleGeneratePromptsAndScript = useCallback(async () => {
+    const originalImage = masterImageAssets.find(a => a.type === 'original' && a.role === 'master');
     if (!originalImage) {
-        setError("An uploaded image is required to generate variations.");
+        setError("An uploaded master image is required to generate prompts and script.");
+        return;
+    }
+    setIsGenerating(prev => ({ ...prev, prompts: true }));
+    setError(null);
+    try {
+        const [visuals, narrative] = await Promise.all([
+            generateVisualPrompt(originalImage.base64),
+            generateAdNarrative(originalImage.base64)
+        ]);
+        setVideoPromptVariations(visuals);
+        setVideoPrompt(visuals[0] || '');
+        setAudioScript(narrative);
+    } catch (err) {
+        setError(`Could not generate prompts: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+        setIsGenerating(prev => ({ ...prev, prompts: false }));
+    }
+  }, [masterImageAssets, setVideoPromptVariations, setVideoPrompt, setAudioScript, setIsGenerating, setError]);
+
+
+  const handleGenerateVariations = useCallback(async () => {
+    const originalImage = masterImageAssets.find(a => a.type === 'original' && a.role === 'master');
+    if (!originalImage) {
+        setError("An uploaded master image is required to generate variations.");
         return;
     }
     setIsGenerating(prev => ({ ...prev, variations: true }));
     setError(null);
     try {
-        // FIX: Removed apiKey from service call.
-        const results = await generateImageVariations(originalImage.base64, variationAspectRatio);
+        const results = await generateImageVariations(originalImage.base64, imageOutputAspectRatio);
         const newAssets: Asset[] = results.map((r, i) => ({
             id: `variation-${Date.now()}-${i}`,
             type: 'variation',
             preview: r.dataUrl,
             base64: r.base64,
             label: r.style,
+            role: 'master',
         }));
-        setImageAssets(prev => [...prev.filter(a => a.type !== 'variation'), ...newAssets]);
+        setMasterImageAssets(prev => [...prev.filter(a => a.type !== 'variation'), ...newAssets]);
     } catch (err) {
         setError(`Image variation failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
         setIsGenerating(prev => ({ ...prev, variations: false }));
     }
-  };
+  }, [masterImageAssets, imageOutputAspectRatio, setMasterImageAssets, setIsGenerating, setError]);
   
-  const handleGenerateCombined = async () => {
-    const originalImage = imageAssets.find(a => a.type === 'original');
-    const logoImage = imageAssets.find(a => a.type === 'logo');
-    const avatarImage = imageAssets.find(a => a.type === 'avatar');
+  const handleGenerateSceneComposition = useCallback(async () => {
+    const originalImage = masterImageAssets.find(a => a.type === 'original' && a.role === 'master');
+    const logoImage = masterImageAssets.find(a => a.type === 'logo' && a.role === 'master');
+    const avatarImage = masterImageAssets.find(a => a.type === 'avatar' && a.role === 'master');
 
     if (!originalImage || !logoImage || !avatarImage) {
-        setError("Original image, logo, and avatar are required to create a combined scene.");
+        setError("Original master image, logo, and avatar are required to create a combined scene.");
         return;
     }
-    setIsGenerating(prev => ({ ...prev, combination: true }));
+    setIsGenerating(prev => ({ ...prev, sceneComposition: true }));
     setError(null);
     try {
-        // FIX: Removed apiKey from service call.
-        const result = await generateCombinedImage(originalImage.base64, logoImage.base64, avatarImage.base64, variationAspectRatio);
+        const result = await generateSceneComposition(originalImage.base64, logoImage.base64, avatarImage.base64, imageOutputAspectRatio);
         const newAsset: Asset = {
-            id: `combined-${Date.now()}`,
+            id: `scene-composition-${Date.now()}`,
             type: 'variation',
             preview: result.dataUrl,
             base64: result.base64,
             label: 'Combined Scene',
+            role: 'master',
         };
-        setImageAssets(prev => [...prev, newAsset]);
+        setMasterImageAssets(prev => [...prev, newAsset]);
     } catch (err) {
-        setError(`Combination failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        setError(`Scene composition failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
-        setIsGenerating(prev => ({ ...prev, combination: false }));
+        setIsGenerating(prev => ({ ...prev, sceneComposition: false }));
     }
-  };
+  }, [masterImageAssets, imageOutputAspectRatio, setMasterImageAssets, setIsGenerating, setError]);
 
-  const handleGenerateAvatar = async () => {
-    const originalImage = imageAssets.find(a => a.type === 'original');
+  const handleGenerateShopTheLook = useCallback(async () => {
+    const masterOriginal = masterImageAssets.find(a => a.type === 'original' && a.role === 'master');
+    const secondaryOriginal = secondaryImageAssets.find(a => a.type === 'secondary_original' && a.role === 'secondary');
+
+    if (!masterOriginal || !secondaryOriginal) {
+        setError("Both master and secondary product images are required to create a 'Shop-the-Look' flat lay.");
+        return;
+    }
+    setIsGenerating(prev => ({ ...prev, shopTheLook: true }));
+    setError(null);
+    try {
+        const result = await generateShopTheLookFlatLay(masterOriginal.base64, secondaryOriginal.base64, imageOutputAspectRatio);
+        const newAsset: Asset = {
+            id: `shop-the-look-${Date.now()}`,
+            type: 'combined_shop_the_look',
+            preview: result.dataUrl,
+            base64: result.base64,
+            label: 'Shop-the-Look',
+            role: 'master',
+        };
+        setMasterImageAssets(prev => [...prev, newAsset]);
+    } catch (err) {
+        setError(`Shop-the-Look Flat Lay generation failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+        setIsGenerating(prev => ({ ...prev, shopTheLook: false }));
+    }
+  }, [masterImageAssets, secondaryImageAssets, imageOutputAspectRatio, setMasterImageAssets, setIsGenerating, setError]);
+
+  const handleGenerateAvatar = useCallback(async () => {
+    const originalImage = masterImageAssets.find(a => a.type === 'original' && a.role === 'master');
     if (!originalImage) {
-      setError("An uploaded image is required to generate an avatar.");
+      setError("An uploaded master image is required to generate an avatar.");
       return;
     }
     setIsGenerating(prev => ({ ...prev, avatar: true }));
     setError(null);
     try {
-      // FIX: Removed apiKey from service call.
       const result = await generateAvatar(originalImage.base64);
-      const newAsset: Asset = { id: `avatar-${Date.now()}`, type: 'avatar', preview: result.dataUrl, base64: result.base64, label: 'AVATAR' };
-      setImageAssets(prev => [...prev.filter(a => a.type !== 'avatar'), newAsset]);
+      const newAsset: Asset = { id: `avatar-${Date.now()}`, type: 'avatar', preview: result.dataUrl, base64: result.base64, label: 'AVATAR', role: 'master' };
+      setMasterImageAssets(prev => [...prev.filter(a => a.type !== 'avatar'), newAsset]);
     } catch (err) {
       setError(`Avatar generation failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setIsGenerating(prev => ({ ...prev, avatar: false }));
     }
-  };
+  }, [masterImageAssets, setMasterImageAssets, setIsGenerating, setError]);
   
-  const handleGenerateLogo = async () => {
+  const handleGenerateLogo = useCallback(async () => {
     if (!logoName.trim()) {
       setError("A brand name is required to generate a logo.");
       return;
@@ -181,314 +252,514 @@ export const PromptForm: React.FC<PromptFormProps> = ({ onSubmit, isLoading }) =
     setIsGenerating(prev => ({ ...prev, logo: true }));
     setError(null);
     try {
-      // FIX: Removed apiKey from service call.
       const result = await generateLogo(logoName);
-      const newAsset: Asset = { id: `logo-${Date.now()}`, type: 'logo', preview: result.dataUrl, base64: result.base64, label: 'LOGO' };
-      setImageAssets(prev => [...prev.filter(a => a.type !== 'logo'), newAsset]);
+      const newAsset: Asset = { id: `logo-${Date.now()}`, type: 'logo', preview: result.dataUrl, base64: result.base64, label: 'LOGO', role: 'master' };
+      setMasterImageAssets(prev => [...prev.filter(a => a.type !== 'logo'), newAsset]);
     } catch (err) {
       setError(`Logo generation failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setIsGenerating(prev => ({ ...prev, logo: false }));
     }
-  };
+  }, [logoName, setMasterImageAssets, setIsGenerating, setError]);
 
-  const handleGenerateAudio = async () => {
-    const startTime = Date.now();
-    console.log('🎤 [PromptForm] Starting audio generation...');
-    console.log('🔧 [PromptForm] Using ElevenLabs:', useElevenLabs);
-    console.log('📝 [PromptForm] Script length:', audioScript.length, 'characters');
-    
+  const handleGenerateAudio = useCallback(async () => {
     if (!audioScript.trim()) {
-      setError("Audio script is required to generate audio.");
+      setError("Audio script cannot be empty.");
       return;
     }
-    
     setIsGenerating(prev => ({ ...prev, audio: true }));
     setError(null);
     setAudioUrl(null);
-    
+
     try {
-      let result;
-      
+      let audioResult;
       if (useElevenLabs) {
-        console.log('🎭 [PromptForm] Using ElevenLabs TTS with voice:', selectedVoice);
-        // Use ElevenLabs TTS
-        result = await generateAudioWithElevenLabs(audioScript, selectedVoice);
-        const url = `data:${result.mimeType};base64,${result.base64Audio}`;
-        setAudioUrl(url);
-        console.log('✅ [PromptForm] ElevenLabs audio generated successfully');
+        audioResult = await generateAudioWithElevenLabs(audioScript, selectedVoice);
       } else {
-        console.log('🎭 [PromptForm] Using Gemini TTS');
-        // Use Gemini TTS (fallback)
-        const { base64Audio, mimeType } = await generateAudioFromText(audioScript);
-        const url = `data:${mimeType};base64,${base64Audio}`;
-        setAudioUrl(url);
-        console.log('✅ [PromptForm] Gemini audio generated successfully');
+        audioResult = await generateAudioFromText(audioScript);
       }
-      
-      const endTime = Date.now();
-      const totalTime = endTime - startTime;
-      console.log('🎉 [PromptForm] Audio generation completed in', totalTime, 'ms');
-      
+      const url = URL.createObjectURL(new Blob([Uint8Array.from(atob(audioResult.base64Audio), c => c.charCodeAt(0))], { type: audioResult.mimeType }));
+      setAudioUrl(url);
     } catch (err) {
-      const endTime = Date.now();
-      const totalTime = endTime - startTime;
-      console.error('❌ [PromptForm] Audio generation failed after', totalTime, 'ms:', err);
       setError(`Audio generation failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setIsGenerating(prev => ({ ...prev, audio: false }));
     }
-  };
+  }, [audioScript, useElevenLabs, selectedVoice, setAudioUrl, setIsGenerating, setError]);
 
-  const handleSubmit = (event: React.FormEvent) => {
-    event.preventDefault();
-    if (videoPrompt.trim() && !isLoading) {
-      const selectedAsset = imageAssets.find(a => a.id === selectedAssetId);
-      // FIX: Removed apiKey from onSubmit call.
-      onSubmit(videoPrompt, selectedAsset?.base64 || null, aspectRatio);
+  const handleGenerateImageFromText = useCallback(async () => {
+    if (!textImagePrompt.trim()) {
+      setError("Text prompt cannot be empty.");
+      return;
     }
-  };
+    setIsGenerating(prev => ({ ...prev, textToImage: true }));
+    setError(null);
+    try {
+        const result = await generateImageFromText(textImagePrompt, imageOutputAspectRatio);
+        const newAsset: Asset = {
+            id: `text-to-image-${Date.now()}`,
+            type: 'text_to_image',
+            preview: result.dataUrl,
+            base64: result.base64,
+            label: 'Text-to-Image',
+            role: 'master',
+        };
+        setMasterImageAssets(prev => [...prev, newAsset]);
+        setSelectedMasterAssetId(newAsset.id);
+    } catch (err) {
+        setError(`Text-to-Image generation failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+        setIsGenerating(prev => ({ ...prev, textToImage: false }));
+    }
+  }, [textImagePrompt, imageOutputAspectRatio, setMasterImageAssets, setSelectedMasterAssetId, setIsGenerating, setError]);
+
+  const handleGenerateImageToImage = useCallback(async () => {
+    const masterOriginal = masterImageAssets.find(a => a.type === 'original' && a.role === 'master');
+    if (!masterOriginal) {
+        setError("An uploaded master image is required for Image to Image generation.");
+        return;
+    }
+    if (!imageToImagePrompt.trim()) {
+        setError("A text prompt is required for Image to Image generation.");
+        return;
+    }
+    setIsGenerating(prev => ({ ...prev, imageToImage: true }));
+    setError(null);
+    try {
+        const result = await generateImageToImage(masterOriginal.base64, imageToImagePrompt, imageOutputAspectRatio);
+        const newAsset: Asset = {
+            id: `image-to-image-${Date.now()}`,
+            type: 'image_to_image',
+            preview: result.dataUrl,
+            base64: result.base64,
+            label: 'Image-to-Image',
+            role: 'master',
+        };
+        setMasterImageAssets(prev => [...prev, newAsset]);
+        setSelectedMasterAssetId(newAsset.id);
+    } catch (err) {
+        setError(`Image to Image generation failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+        setIsGenerating(prev => ({ ...prev, imageToImage: false }));
+    }
+  }, [masterImageAssets, imageToImagePrompt, imageOutputAspectRatio, setMasterImageAssets, setSelectedMasterAssetId, setIsGenerating, setError]);
+
+
+  const handleSubmit = useCallback((event: React.FormEvent) => {
+    event.preventDefault();
+    if (generationMode === 'imageToVideo') {
+        if (videoPrompt.trim() && !isLoading) {
+            const selectedAsset = masterImageAssets.find(a => a.id === selectedMasterAssetId);
+            onSubmit(videoPrompt, selectedAsset?.base64 || null, videoOutputAspectRatio);
+        }
+    } else if (generationMode === 'textToImage') {
+        handleGenerateImageFromText();
+    }
+  }, [generationMode, videoPrompt, isLoading, masterImageAssets, selectedMasterAssetId, onSubmit, videoOutputAspectRatio, handleGenerateImageFromText]);
   
   const allLoading = isLoading || Object.values(isGenerating).some(Boolean);
-  const hasLogo = imageAssets.some(a => a.type === 'logo');
-  const hasAvatar = imageAssets.some(a => a.type === 'avatar');
+  const hasLogo = masterImageAssets.some(a => a.type === 'logo');
+  const hasAvatar = masterImageAssets.some(a => a.type === 'avatar');
+  const hasMasterOriginal = masterImageAssets.some(a => a.type === 'original' && a.role === 'master');
+  const hasSecondaryOriginal = secondaryImageAssets.some(a => a.type === 'secondary_original' && a.role === 'secondary');
   const promptLabels = ["One-take", "Story Showcase", "Catalog Loop"];
 
+  const selectedMasterAsset = masterImageAssets.find(a => a.id === selectedMasterAssetId);
+  const masterImagePreview = masterImageAssets.find(a => a.type === 'original' && a.role === 'master')?.preview || null;
+  const secondaryImagePreview = secondaryImageAssets.find(a => a.type === 'secondary_original' && a.role === 'secondary')?.preview || null;
+
+  const allAssets = [...masterImageAssets, ...secondaryImageAssets];
+  const otherAssets = allAssets.filter(asset => asset.id !== selectedMasterAssetId);
+
+
+  const handleClearImageToImage = useCallback(() => {
+    setImageToImagePrompt('');
+    setError(null);
+  }, [setImageToImagePrompt, setError]);
+
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      {/* REMOVED: API Key input field and related UI have been removed to improve security. */}
-      
-      <div className="grid md:grid-cols-2 gap-6">
-        <div>
-            <div className="flex items-center gap-2 mb-2">
-                <label htmlFor="video-prompt" className="block text-sm font-medium text-gray-300">
-                Video Prompt
-                </label>
-                {isGenerating.prompts && (
-                  <div className="flex items-center gap-1">
-                    <div className="w-4 h-4 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin"></div>
-                    <span className="text-xs text-indigo-400">Generating...</span>
-                  </div>
+    <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {/* Left Column: Inputs and Controls */}
+      <div className="lg:col-span-2 space-y-6">
+        {/* Generation Mode */}
+        <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4 shadow-md">
+            <h3 className="text-lg font-semibold text-gray-200 mb-3">Generation Mode</h3>
+            <div className="flex gap-2">
+                <button 
+                    type="button" 
+                    onClick={() => setGenerationMode('imageToVideo')}
+                    className={`px-4 py-2 rounded-lg text-sm transition-colors ${generationMode === 'imageToVideo' ? 'bg-indigo-600 text-white' : 'bg-gray-700 text-white hover:bg-gray-500 hover:text-black'}`}
+                    disabled={allLoading}
+                >
+                    Image to Video
+                </button>
+                <button 
+                    type="button" 
+                    onClick={() => setGenerationMode('textToImage')}
+                    className={`px-4 py-2 rounded-lg text-sm transition-colors ${generationMode === 'textToImage' ? 'bg-indigo-600 text-white' : 'bg-gray-700 text-white hover:bg-gray-500 hover:text-black'}`}
+                    disabled={allLoading}
+                >
+                    Text to Image
+                </button>
+            </div>
+        </div>
+
+        {generationMode === 'imageToVideo' && (
+            <>
+                {/* Image to Image Prompt */}
+                <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4 space-y-4 shadow-md">
+                    <h3 className="text-lg font-semibold text-gray-200">Image to Image Prompt</h3>
+                    <textarea
+                        id="image-to-image-prompt"
+                        value={imageToImagePrompt}
+                        onChange={(e) => setImageToImagePrompt(e.target.value)}
+                        placeholder="Describe changes to the master image..."
+                        className="w-full h-24 p-3 bg-gray-700/50 border border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 placeholder-gray-300 text-gray-100"
+                        disabled={allLoading || !hasMasterOriginal}
+                    />
+                    <div className="flex flex-wrap gap-2">
+                        <button type="button" onClick={handleGenerateImageToImage} disabled={allLoading || !hasMasterOriginal || !imageToImagePrompt.trim()} className="flex-grow flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-50 text-sm">
+                            {isGenerating.imageToImage ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <SparklesIcon className="w-4 h-4" />}
+                            {isGenerating.imageToImage ? 'Generating...' : 'Generate Image from Master + Prompt'}
+                        </button>
+                        <button type="button" onClick={handleClearImageToImage} disabled={allLoading || !imageToImagePrompt.trim()} className="flex-shrink-0 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg disabled:opacity-50 text-sm">
+                            Clear
+                        </button>
+                    </div>
+                </div>
+
+                {/* Upload Source Images */}
+                <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4 space-y-4 shadow-md">
+                    <h3 className="text-lg font-semibold text-gray-200">Upload Source Images</h3>
+                    <ImageUploadBox
+                        label="Master Product Image"
+                        onFileChange={handleMasterImageChange}
+                        fileInputRef={masterFileInputRef}
+                        disabled={allLoading}
+                        currentImagePreview={masterImagePreview}
+                    />
+                    <ImageUploadBox
+                        label="Secondary Product Image (Optional for Shop-the-Look)"
+                        onFileChange={handleSecondaryImageChange}
+                        fileInputRef={secondaryFileInputRef}
+                        disabled={allLoading}
+                        currentImagePreview={secondaryImagePreview}
+                    />
+                </div>
+
+                {/* Video Prompt & Audio Script */}
+                <div className="grid md:grid-cols-2 gap-6">
+                    <div>
+                        <div className="flex items-center gap-2 mb-2">
+                            <label htmlFor="video-prompt" className="block text-sm font-medium text-gray-300">
+                            Video Prompt
+                            </label>
+                            {isGenerating.prompts && (
+                            <div className="flex items-center gap-1">
+                                <div className="w-4 h-4 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin"></div>
+                                <span className="text-xs text-indigo-400">Generating...</span>
+                            </div>
+                            )}
+                        </div>
+                        <textarea
+                        id="video-prompt"
+                        value={videoPrompt}
+                        onChange={(e) => setVideoPrompt(e.target.value)}
+                        placeholder="Write your video prompt or generate one..."
+                        className="w-full h-28 p-3 bg-gray-700/50 border border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 placeholder-gray-300 text-gray-100"
+                        required
+                        disabled={allLoading}
+                        />
+                        {videoPromptVariations.length > 0 && (
+                            <div className="mt-2 space-y-2">
+                                <p className="text-xs text-gray-300">AI Prompt Suggestions:</p>
+                                <div className="flex flex-wrap gap-2">
+                                    {videoPromptVariations.map((prompt, index) => (
+                                        <button
+                                            type="button"
+                                            key={index}
+                                            onClick={() => setVideoPrompt(prompt)}
+                                            disabled={allLoading}
+                                            className={`px-3 py-1 text-xs rounded-full transition-colors disabled:opacity-50 ${videoPrompt === prompt ? 'bg-indigo-600 text-white' : 'bg-gray-700 text-white hover:bg-gray-500 hover:text-black'}`}
+                                        >
+                                            {promptLabels[index] || `Suggestion ${index + 1}`}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                    <div>
+                        <div className="flex items-center gap-2 mb-2">
+                            <label htmlFor="audio-script" className="block text-sm font-medium text-gray-300">
+                            Audio Script
+                            </label>
+                            {isGenerating.prompts && (
+                            <div className="flex items-center gap-1">
+                                <div className="w-4 h-4 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin"></div>
+                                <span className="text-xs text-indigo-400">Generating...</span>
+                            </div>
+                            )}
+                        </div>
+                        <textarea
+                        id="audio-script"
+                        value={audioScript}
+                        onChange={(e) => setAudioScript(e.target.value)}
+                        placeholder="Write your audio script or generate one..."
+                        className="w-full h-28 p-3 bg-gray-700/50 border border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 placeholder-gray-300 text-gray-100"
+                        disabled={allLoading}
+                        />
+                    </div>
+                </div>
+                
+                {/* Generate Prompts & Script Button */}
+                <button 
+                    type="button" 
+                    onClick={handleGeneratePromptsAndScript} 
+                    disabled={allLoading || !hasMasterOriginal}
+                    className="w-full flex items-center justify-center gap-3 py-3 px-6 bg-blue-600 hover:bg-blue-700 text-white font-bold text-lg rounded-lg shadow-lg transform hover:scale-105 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:scale-100"
+                >
+                    {isGenerating.prompts ? (<><div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>Generating Prompts & Script...</>) : (<><SparklesIcon className="w-6 h-6" />Generate Prompts & Script</>)}
+                </button>
+
+                {/* Audio Generation Options */}
+                <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4 space-y-4 shadow-md">
+                    <h3 className="text-lg font-semibold text-gray-200">Audio Generation</h3>
+                    <div className="flex items-center gap-4">
+                        <label className="flex items-center gap-2 text-sm text-gray-300">
+                            <input
+                            type="checkbox"
+                            checked={useElevenLabs}
+                            onChange={(e) => setUseElevenLabs(e.target.checked)}
+                            className="rounded border-gray-600 bg-gray-700 text-indigo-600 focus:ring-indigo-500"
+                            />
+                            Use ElevenLabs TTS (Better Quality)
+                        </label>
+                    </div>
+
+                    {useElevenLabs && (
+                        <div className="grid md:grid-cols-2 gap-4">
+                            <div>
+                            <label className="block text-sm font-medium text-gray-300 mb-2">
+                                Voice Selection
+                            </label>
+                            <select
+                                value={selectedVoice}
+                                onChange={(e) => setSelectedVoice(e.target.value)}
+                                className="w-full p-3 bg-gray-700/50 border border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 text-gray-100"
+                            >
+                                {Object.entries(getAvailableVoices()).map(([name, id]) => (
+                                <option key={id} value={id}>
+                                    {name}
+                                </option>
+                                ))}
+                            </select>
+                            </div>
+                            <div className="flex items-end">
+                            <button type="button" onClick={handleGenerateAudio} disabled={allLoading || !audioScript} className="flex items-center gap-2 px-4 py-3 bg-indigo-600 hover:bg-indigo-700 rounded-lg disabled:opacity-50 transition-colors">
+                                {isGenerating.audio ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <SoundWaveIcon className="w-5 h-5" />}
+                                {isGenerating.audio ? 'Generating Voiceover...' : 'Generate Audio'}
+                            </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {!useElevenLabs && (
+                        <div className="space-y-3">
+                            <button type="button" onClick={handleGenerateAudio} disabled={allLoading || !audioScript} className="flex items-center gap-2 px-4 py-2 bg-gray-700 text-white hover:bg-gray-500 hover:text-black rounded-lg disabled:opacity-50 transition-colors">
+                            {isGenerating.audio ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <SoundWaveIcon className="w-5 h-5" />}
+                            {isGenerating.audio ? 'Generating Voiceover...' : 'Generate Audio (Gemini TTS)'}
+                            </button>
+                        </div>
+                    )}
+
+                    {audioUrl && (
+                        <div className="flex items-center gap-4 p-3 bg-gray-700/50 rounded-lg">
+                            <audio controls src={audioUrl} className="w-full"></audio>
+                            <a href={audioUrl} download="generated-voiceover.mp3" className="flex-shrink-0 p-2 bg-indigo-600 hover:bg-indigo-700 rounded-full text-white" aria-label="Download Audio">
+                                <DownloadIcon className="w-5 h-5"/>
+                            </a>
+                        </div>
+                    )}
+                </div>
+
+                {/* Generate Ad Variations & Creative Tools */}
+                {hasMasterOriginal && (
+                    <div className="grid md:grid-cols-2 gap-6">
+                        <div className="p-4 bg-gray-700/30 rounded-lg space-y-4 border border-gray-600 shadow-md">
+                            <h3 className="font-semibold text-gray-200">Generate Ad Variations</h3>
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-gray-300">Resolution</label>
+                                <div className="grid grid-cols-3 gap-2">
+                                    <button type="button" onClick={() => setImageOutputAspectRatio('1:1')} disabled={allLoading} className={`py-2 px-4 text-sm rounded-lg transition-colors ${imageOutputAspectRatio === '1:1' ? 'bg-purple-600 text-white' : 'bg-gray-700 text-white hover:bg-gray-500 hover:text-black'}`}>1:1</button>
+                                    <button type="button" onClick={() => setImageOutputAspectRatio('16:9')} disabled={allLoading} className={`py-2 px-4 text-sm rounded-lg transition-colors ${imageOutputAspectRatio === '16:9' ? 'bg-purple-600 text-white' : 'bg-gray-700 text-white hover:bg-gray-500 hover:text-black'}`}>16:9</button>
+                                    <button type="button" onClick={() => setImageOutputAspectRatio('9:16')} disabled={allLoading} className={`py-2 px-4 text-sm rounded-lg transition-colors ${imageOutputAspectRatio === '9:16' ? 'bg-purple-600 text-white' : 'bg-gray-700 text-white hover:bg-gray-500 hover:text-black'}`}>9:16</button>
+                                </div>
+                            </div>
+                            <button type="button" onClick={handleGenerateVariations} disabled={allLoading} className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg disabled:opacity-50 w-full justify-center">
+                                {isGenerating.variations ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <SparklesIcon className="w-5 h-5" />}
+                                {isGenerating.variations ? 'Generating...' : 'Generate Variations'}
+                            </button>
+                            {hasLogo && hasAvatar && (
+                                <div className="pt-4 mt-4 border-t border-gray-600/50">
+                                    <button type="button" onClick={handleGenerateSceneComposition} disabled={allLoading} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-teal-600 hover:bg-teal-700 rounded-lg disabled:opacity-50">
+                                        {isGenerating.sceneComposition ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <SparklesIcon className="w-5 h-5" />}
+                                        {isGenerating.sceneComposition ? 'Combining...' : 'Combine with Logo & Avatar'}
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                        <div className="p-4 bg-gray-700/30 rounded-lg space-y-4 border border-gray-600 shadow-md">
+                            <h3 className="font-semibold text-gray-200">Creative Tools</h3>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <input type="text" value={logoName} onChange={(e) => setLogoName(e.target.value)} placeholder="Your Brand Name" className="flex-grow p-2 text-sm bg-gray-700/50 border border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 placeholder-gray-300 text-gray-100" disabled={allLoading}/>
+                                <button type="button" onClick={handleGenerateLogo} disabled={allLoading || !logoName} className="flex-shrink-0 flex items-center gap-2 px-3 py-2 bg-gray-700 text-white hover:bg-gray-500 hover:text-black rounded-lg disabled:opacity-50 text-sm">
+                                    {isGenerating.logo ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <SparklesIcon className="w-4 h-4" />}
+                                    {isGenerating.logo ? '...' : 'Generate Logo'}
+                                </button>
+                            </div>
+                            <button type="button" onClick={handleGenerateAvatar} disabled={allLoading} className="flex items-center gap-2 px-4 py-2 bg-gray-700 text-white hover:bg-gray-500 hover:text-black rounded-lg disabled:opacity-50">
+                                {isGenerating.avatar ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <SparklesIcon className="w-5 h-5" />}
+                                {isGenerating.avatar ? 'Generating...' : 'Generate Avatar'}
+                            </button>
+                            {hasMasterOriginal && hasSecondaryOriginal && (
+                                <div className="pt-4 mt-4 border-t border-gray-600/50">
+                                    <button type="button" onClick={handleGenerateShopTheLook} disabled={allLoading} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-yellow-600 hover:bg-yellow-700 rounded-lg disabled:opacity-50">
+                                        {isGenerating.shopTheLook ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <SparklesIcon className="w-5 h-5" />}
+                                        {isGenerating.shopTheLook ? 'Generating...' : 'Shop-the-Look Flat Lay'}
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+            </>
+        )}
+
+        {generationMode === 'textToImage' && (
+            <>
+                {/* Text to Image Prompt */}
+                <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4 space-y-4 shadow-md">
+                    <h3 className="text-lg font-semibold text-gray-200">Text to Image Prompt</h3>
+                    <textarea
+                        id="text-image-prompt"
+                        value={textImagePrompt}
+                        onChange={(e) => setTextImagePrompt(e.target.value)}
+                        placeholder="Describe the image you want to generate..."
+                        className="w-full h-32 p-3 bg-gray-700/50 border border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 placeholder-gray-300 text-gray-100"
+                        required
+                        disabled={allLoading}
+                    />
+                </div>
+            </>
+        )}
+
+        {/* Output Resolution */}
+        <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4 space-y-4 shadow-md">
+            <h3 className="text-lg font-semibold text-gray-200">Output Resolution</h3>
+            <div className="grid grid-cols-3 gap-2">
+                <button type="button" onClick={() => setImageOutputAspectRatio('1:1')} disabled={allLoading} className={`py-2 px-4 rounded-lg text-sm transition-colors ${imageOutputAspectRatio === '1:1' ? 'bg-indigo-600 text-white' : 'bg-gray-700 text-white hover:bg-gray-500 hover:text-black'}`}>1:1 Square</button>
+                <button type="button" onClick={() => setImageOutputAspectRatio('16:9')} disabled={allLoading} className={`py-2 px-4 rounded-lg text-sm transition-colors ${imageOutputAspectRatio === '16:9' ? 'bg-indigo-600 text-white' : 'bg-gray-700 text-white hover:bg-gray-500 hover:text-black'}`}>16:9 Landscape</button>
+                <button type="button" onClick={() => setImageOutputAspectRatio('9:16')} disabled={allLoading} className={`py-2 px-4 rounded-lg text-sm transition-colors ${imageOutputAspectRatio === '9:16' ? 'bg-indigo-600 text-white' : 'bg-gray-700 text-white hover:bg-gray-500 hover:text-black'}`}>9:16 Portrait</button>
+            </div>
+        </div>
+        
+        {error && <div className="text-red-400 text-sm bg-red-900/30 p-3 rounded-lg shadow-md">{error}</div>}
+
+        {/* Generate Button */}
+        <div className="flex flex-col sm:flex-row gap-4 items-center">
+            <button 
+                type="submit" 
+                disabled={allLoading || 
+                          (generationMode === 'imageToVideo' && (!videoPrompt || !selectedMasterAssetId)) || 
+                          (generationMode === 'textToImage' && !textImagePrompt)} 
+                className="w-full flex items-center justify-center gap-3 py-3 px-6 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold text-lg rounded-lg shadow-lg transform hover:scale-105 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:scale-100"
+            >
+                {allLoading ? (<><div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>Generating...</>) : (<><SparklesIcon className="w-6 h-6" />{generationMode === 'imageToVideo' ? 'Generate Video' : 'Generate Image'}</>)}
+            </button>
+            <div className="flex-shrink-0 flex items-center gap-2">
+                <a href="https://labs.google/fx/tools/flow" target="_blank" rel="noopener noreferrer" className="p-2 bg-gray-700 text-gray-300 hover:bg-gray-600 hover:text-white rounded-lg transition-colors" title="Open in Flow">
+                    <ExternalLinkIcon className="w-5 h-5" />
+                </a>
+                <a 
+                    href={`https://gemini.google.com/?prompt=${encodeURIComponent(
+                        generationMode === 'imageToVideo' ? videoPrompt : 
+                        textImagePrompt
+                    )}`} 
+                    target="_blank" 
+                    rel="noopener noreferrer" 
+                    className={`p-2 bg-gray-700 text-gray-300 hover:bg-gray-600 hover:text-white rounded-lg transition-colors ${
+                        (generationMode === 'imageToVideo' && !videoPrompt) || 
+                        (generationMode === 'textToImage' && !textImagePrompt) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    title="Open prompt in Gemini"
+                    onClick={(e) => ((generationMode === 'imageToVideo' && !videoPrompt) || 
+                                    (generationMode === 'textToImage' && !textImagePrompt)) && e.preventDefault()}
+                >
+                    <ExternalLinkIcon className="w-5 h-5" />
+                </a>
+            </div>
+        </div>
+      </div>
+
+      {/* Right Column: Generated Images & Recent Generations */}
+      <div className="lg:col-span-1 space-y-6">
+        {/* Generated Images (Selected Asset) */}
+        <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4 space-y-4 shadow-md">
+            <h3 className="text-lg font-semibold text-gray-200">Generated Images</h3>
+            <div className="w-full h-64 bg-gray-700 rounded-lg flex items-center justify-center overflow-hidden">
+                {selectedMasterAsset ? (
+                    <img src={selectedMasterAsset.preview} alt={selectedMasterAsset.label} className="w-full h-full object-contain" />
+                ) : (
+                    <div className="text-center text-gray-300">
+                        <SparklesIcon className="w-12 h-12 mx-auto mb-2 text-indigo-400" />
+                        <p>No images generated yet</p>
+                        <p className="text-sm">Select an asset from below or generate new ones.</p>
+                    </div>
                 )}
             </div>
-            <textarea
-              id="video-prompt"
-              value={videoPrompt}
-              onChange={(e) => setVideoPrompt(e.target.value)}
-              placeholder="Upload an image to automatically generate a video prompt..."
-              className="w-full h-28 p-3 bg-gray-700/50 border border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500"
-              required
-              disabled={allLoading}
-            />
-            {videoPromptVariations.length > 0 && (
-                <div className="mt-2 space-y-2">
-                    <p className="text-xs text-gray-400">AI Prompt Suggestions:</p>
-                    <div className="flex flex-wrap gap-2">
-                        {videoPromptVariations.map((prompt, index) => (
-                            <button
-                                type="button"
-                                key={index}
-                                onClick={() => setVideoPrompt(prompt)}
-                                disabled={allLoading}
-                                className={`px-3 py-1 text-xs rounded-full transition-colors disabled:opacity-50 ${videoPrompt === prompt ? 'bg-indigo-600 text-white' : 'bg-gray-600/70 hover:bg-gray-600'}`}
-                            >
-                                {promptLabels[index] || `Suggestion ${index + 1}`}
-                            </button>
-                        ))}
-                    </div>
+            {selectedMasterAsset && (
+                <div className="text-center text-gray-300 text-sm">
+                    <p className="font-semibold text-gray-200">{selectedMasterAsset.label}</p>
+                    <a href={selectedMasterAsset.preview} download={`${selectedMasterAsset.type}-${selectedMasterAsset.label}.jpg`} className="inline-flex items-center gap-1 text-indigo-400 hover:text-indigo-300 mt-1">
+                        <DownloadIcon className="w-4 h-4" /> Download
+                    </a>
                 </div>
             )}
         </div>
-        <div>
-            <div className="flex items-center gap-2 mb-2">
-                <label htmlFor="audio-script" className="block text-sm font-medium text-gray-300">
-                Audio Script
-                </label>
-                 {isGenerating.prompts && (
-                  <div className="flex items-center gap-1">
-                    <div className="w-4 h-4 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin"></div>
-                    <span className="text-xs text-indigo-400">Generating...</span>
-                  </div>
-                )}
-            </div>
-            <textarea
-              id="audio-script"
-              value={audioScript}
-              onChange={(e) => setAudioScript(e.target.value)}
-              placeholder="...and a promotional script."
-              className="w-full h-28 p-3 bg-gray-700/50 border border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500"
-              disabled={allLoading}
-            />
-        </div>
-      </div>
-      
-       {/* Audio Generation Options */}
-       <div className="space-y-4">
-         <div className="flex items-center gap-4">
-           <label className="flex items-center gap-2 text-sm text-gray-300">
-             <input
-               type="checkbox"
-               checked={useElevenLabs}
-               onChange={(e) => setUseElevenLabs(e.target.checked)}
-               className="rounded border-gray-600 bg-gray-700 text-indigo-600 focus:ring-indigo-500"
-             />
-             Use ElevenLabs TTS (Better Quality)
-           </label>
-         </div>
 
-         {useElevenLabs && (
-           <div className="grid md:grid-cols-2 gap-4">
-             <div>
-               <label className="block text-sm font-medium text-gray-300 mb-2">
-                 Voice Selection
-               </label>
-               <select
-                 value={selectedVoice}
-                 onChange={(e) => setSelectedVoice(e.target.value)}
-                 className="w-full p-3 bg-gray-700/50 border border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 text-gray-100"
-               >
-                 {Object.entries(getAvailableVoices()).map(([name, id]) => (
-                   <option key={id} value={id}>
-                     {name}
-                   </option>
-                 ))}
-               </select>
-             </div>
-             <div className="flex items-end">
-               <button type="button" onClick={handleGenerateAudio} disabled={allLoading || !audioScript} className="flex items-center gap-2 px-4 py-3 bg-indigo-600 hover:bg-indigo-700 rounded-lg disabled:opacity-50 transition-colors">
-                 {isGenerating.audio ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <SoundWaveIcon className="w-5 h-5" />}
-                 {isGenerating.audio ? 'Generating Voiceover...' : 'Generate Audio'}
-               </button>
-             </div>
-           </div>
-         )}
-
-         {!useElevenLabs && (
-           <div className="space-y-3">
-             <button type="button" onClick={handleGenerateAudio} disabled={allLoading || !audioScript} className="flex items-center gap-2 px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded-lg disabled:opacity-50 transition-colors">
-               {isGenerating.audio ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <SoundWaveIcon className="w-5 h-5" />}
-               {isGenerating.audio ? 'Generating Voiceover...' : 'Generate Audio (Gemini TTS)'}
-             </button>
-           </div>
-         )}
-
-         {audioUrl && (
-           <div className="flex items-center gap-4 p-3 bg-gray-700/50 rounded-lg">
-               <audio controls src={audioUrl} className="w-full"></audio>
-               <a href={audioUrl} download="generated-voiceover.mp3" className="flex-shrink-0 p-2 bg-indigo-600 hover:bg-indigo-700 rounded-full text-white" aria-label="Download Audio">
-                   <DownloadIcon className="w-5 h-5"/>
-               </a>
-           </div>
-         )}
-       </div>
-
-      <div>
-        <input type="file" accept="image/png, image/jpeg" onChange={handleImageChange} className="hidden" ref={fileInputRef} disabled={allLoading} />
-        <button type="button" onClick={() => fileInputRef.current?.click()} disabled={allLoading} className="flex-shrink-0 flex items-center justify-center gap-2 px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white font-semibold rounded-lg transition-colors disabled:opacity-50">
-          <UploadIcon className="w-5 h-5" />
-          {imageAssets.length > 0 ? 'Change Base Image' : 'Upload Product Image'}
-        </button>
-      </div>
-
-       {imageAssets.length > 0 && (
-            <div className="p-4 bg-gray-700/30 rounded-lg space-y-4 border border-gray-600">
-                <h3 className="font-semibold text-gray-200">Asset Gallery</h3>
-                <p className="text-sm text-gray-400">Select an asset to use for video generation.</p>
-                <div className="overflow-y-auto pr-2">
-                    <div className="flex flex-wrap gap-3">
-                        {imageAssets.map((asset) => (
-                            <div key={asset.id} onClick={() => setSelectedAssetId(asset.id)} className={`relative group cursor-pointer rounded-lg overflow-hidden border-2 ${selectedAssetId === asset.id ? 'border-indigo-500' : 'border-transparent'} w-24 h-24 flex-shrink-0`}>
-                                 <img src={asset.preview} alt={asset.label} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
-                                 <div className="absolute inset-0 bg-black/60 flex items-end justify-center p-1">
-                                    <span className="text-xs font-bold text-white text-center leading-tight">{asset.label}</span>
-                                 </div>
-                                 <a href={asset.preview} download={`${asset.type}-${asset.label}.jpg`} className="absolute top-1 right-1 p-1 bg-black/50 rounded-full text-gray-300 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity" aria-label="Download image" onClick={e=>e.stopPropagation()}>
-                                    <DownloadIcon className="w-4 h-4"/>
-                                </a>
+        {/* Recent Generations (Asset Gallery) */}
+        {(masterImageAssets.length > 0 || secondaryImageAssets.length > 0) && (
+            <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4 space-y-4 shadow-md">
+                <h3 className="text-lg font-semibold text-gray-200">Recent Generations</h3>
+                <div className="max-h-96 overflow-y-auto pr-2">
+                    <div className="flex flex-wrap gap-3 justify-center">
+                        {otherAssets.length === 0 && !selectedMasterAsset ? (
+                            <div className="text-center text-gray-300 py-8">
+                                <SparklesIcon className="w-10 h-10 mx-auto mb-2 text-indigo-400" />
+                                <p>No generation history yet</p>
+                                <p className="text-sm">Start creating to see your history here</p>
                             </div>
-                        ))}
+                        ) : (
+                            otherAssets.map((asset) => (
+                                <div key={asset.id} onClick={() => setSelectedMasterAssetId(asset.id)} className={`relative group cursor-pointer rounded-lg overflow-hidden border-2 ${selectedMasterAssetId === asset.id ? 'border-indigo-500' : 'border-transparent'} w-24 h-24 flex-shrink-0`}>
+                                    <img src={asset.preview} alt={asset.label} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
+                                    <div className="absolute inset-0 bg-black/60 flex items-end justify-center p-1">
+                                        <span className="text-xs font-bold text-white text-center leading-tight">{asset.label}</span>
+                                    </div>
+                                    <a href={asset.preview} download={`${asset.type}-${asset.label}.jpg`} className="absolute top-1 right-1 p-1 bg-black/50 rounded-full text-gray-300 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity" aria-label="Download image" onClick={e=>e.stopPropagation()}>
+                                        <DownloadIcon className="w-4 h-4"/>
+                                    </a>
+                                </div>
+                            ))
+                        )}
                     </div>
                 </div>
-                 <div className="pt-3 mt-3 border-t border-gray-600/50 text-center">
-                     <a href="https://aifaceswap.io/" target="_blank" rel="noopener noreferrer" className="text-sm text-indigo-400 hover:text-indigo-300 transition-colors flex items-center justify-center gap-1">
-                        Experiment with FaceSwap <ExternalLinkIcon className="w-4 h-4" />
-                     </a>
-                </div>
             </div>
-       )}
+        )}
 
-      {imageAssets.some(a => a.type === 'original') && (
-        <div className="grid md:grid-cols-2 gap-6">
-            <div className="p-4 bg-gray-700/30 rounded-lg space-y-4 border border-gray-600">
-                <h3 className="font-semibold text-gray-200">Generate Ad Variations</h3>
-                <div className="space-y-2">
-                    <label className="text-sm text-gray-400 block">Resolution</label>
-                    <div className="grid grid-cols-2 gap-2">
-                        <button type="button" onClick={() => setVariationAspectRatio('16:9')} disabled={allLoading} className={`py-2 px-4 text-sm rounded-lg transition-colors ${variationAspectRatio === '16:9' ? 'bg-purple-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}`}>16:9</button>
-                        <button type="button" onClick={() => setVariationAspectRatio('9:16')} disabled={allLoading} className={`py-2 px-4 text-sm rounded-lg transition-colors ${variationAspectRatio === '9:16' ? 'bg-purple-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}`}>9:16</button>
-                    </div>
-                </div>
-                <button type="button" onClick={handleGenerateVariations} disabled={allLoading} className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg disabled:opacity-50 w-full justify-center">
-                    {isGenerating.variations ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <SparklesIcon className="w-5 h-5" />}
-                    {isGenerating.variations ? 'Generating...' : 'Generate Variations'}
-                </button>
-                {hasLogo && hasAvatar && (
-                    <div className="pt-4 mt-4 border-t border-gray-600/50">
-                        <button type="button" onClick={handleGenerateCombined} disabled={allLoading} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-teal-600 hover:bg-teal-700 rounded-lg disabled:opacity-50">
-                            {isGenerating.combination ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <SparklesIcon className="w-5 h-5" />}
-                            {isGenerating.combination ? 'Combining...' : 'Combine with Logo & Avatar'}
-                        </button>
-                    </div>
-                )}
-            </div>
-            <div className="p-4 bg-gray-700/30 rounded-lg space-y-4 border border-gray-600">
-                <h3 className="font-semibold text-gray-200">Creative Tools</h3>
-                 <div className="flex flex-wrap items-center gap-2">
-                    <input type="text" value={logoName} onChange={(e) => setLogoName(e.target.value)} placeholder="Your Brand Name" className="flex-grow p-2 text-sm bg-gray-700/50 border border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500" disabled={allLoading}/>
-                    <button type="button" onClick={handleGenerateLogo} disabled={allLoading || !logoName} className="flex-shrink-0 flex items-center gap-2 px-3 py-2 bg-gray-600 hover:bg-gray-500 rounded-lg disabled:opacity-50 text-sm">
-                        {isGenerating.logo ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <SparklesIcon className="w-4 h-4" />}
-                        {isGenerating.logo ? '...' : 'Generate Logo'}
-                    </button>
-                 </div>
-                                     <button type="button" onClick={handleGenerateAvatar} disabled={allLoading} className="flex items-center gap-2 px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded-lg disabled:opacity-50">
-                    {isGenerating.avatar ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <SparklesIcon className="w-5 h-5" />}
-                    {isGenerating.avatar ? 'Generating...' : 'Generate Avatar'}
-                 </button>
-            </div>
-        </div>
-      )}
-
-    <div>
-        <label className="block text-sm font-medium text-gray-300 mb-2">Final Video Resolution</label>
-        <div className="grid grid-cols-2 gap-2">
-            <button type="button" onClick={() => setAspectRatio('16:9')} disabled={allLoading} className={`py-2 px-4 rounded-lg transition-colors ${aspectRatio === '16:9' ? 'bg-indigo-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}`}>16:9 Landscape</button>
-            <button type="button" onClick={() => setAspectRatio('9:16')} disabled={allLoading} className={`py-2 px-4 rounded-lg transition-colors ${aspectRatio === '9:16' ? 'bg-indigo-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}`}>9:16 Portrait</button>
-        </div>
-    </div>
-    
-      {error && <div className="text-red-400 text-sm bg-red-900/30 p-3 rounded-lg">{error}</div>}
-
-      <div className="flex flex-col sm:flex-row gap-4 items-center">
-        <button type="submit" disabled={allLoading || !videoPrompt || !selectedAssetId} className="w-full flex items-center justify-center gap-3 py-3 px-6 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold text-lg rounded-lg shadow-lg transform hover:scale-105 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:scale-100">
-            {isLoading ? (<><div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>Generating...</>) : (<><SparklesIcon className="w-6 h-6" />Generate Video</>)}
-        </button>
-        <div className="flex-shrink-0 flex items-center gap-2">
-            <a href="https://labs.google/fx/tools/flow" target="_blank" rel="noopener noreferrer" className="p-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors text-gray-300" title="Open in Flow">
-                <ExternalLinkIcon className="w-5 h-5" />
-            </a>
-             <a 
-                href={`https://gemini.google.com/?prompt=${encodeURIComponent(videoPrompt)}`} 
-                target="_blank" 
-                rel="noopener noreferrer" 
-                className={`p-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors text-gray-300 ${!videoPrompt ? 'opacity-50 cursor-not-allowed' : ''}`}
-                title="Open prompt in Gemini"
-                onClick={(e) => !videoPrompt && e.preventDefault()}
-             >
-                <ExternalLinkIcon className="w-5 h-5" />
-            </a>
-        </div>
+        {/* Prompt Tutorial */}
+        <PromptTutorial />
       </div>
-
     </form>
   );
 };

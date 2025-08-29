@@ -26,7 +26,7 @@ export const SupportButton: React.FC = () => {
       {/* Support Modal */}
       {showSupportModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 rounded-2xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
+          <div className="bg-gray-800 rounded-2xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto shadow-2xl"> {/* Added shadow-2xl */}
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-2xl font-bold text-white">{supportConfig.modalTitle}</h2>
               <button
@@ -39,12 +39,12 @@ export const SupportButton: React.FC = () => {
 
             <div className="space-y-4">
               {supportOptions.map((option, index) => (
-                <div key={index} className="bg-gray-700 rounded-lg p-4">
+                <div key={index} className="bg-gray-700 rounded-lg p-4 shadow-md"> {/* Added shadow-md */}
                   <div className="flex items-center gap-3 mb-2">
                     <span className="text-2xl">{option.icon}</span>
                     <div>
                       <h3 className="text-lg font-semibold text-white">{option.name}</h3>
-                      <p className="text-gray-400 text-sm">{option.description}</p>
+                      <p className="text-gray-300 text-sm">{option.description}</p>
                     </div>
                   </div>
 
@@ -53,14 +53,14 @@ export const SupportButton: React.FC = () => {
                       href={option.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className={`block w-full text-center py-2 px-4 ${option.color} text-white font-medium rounded-lg transition-colors`}
+                      className={`block w-full text-center py-2 px-4 ${option.color} text-white font-medium rounded-lg transition-colors mt-3`} /* Added mt-3 for spacing */
                     >
                       Buka Saweria
                     </a>
                   )}
 
                   {option.qrCode && (
-                    <div className="text-center">
+                    <div className="text-center mt-3"> {/* Added mt-3 for spacing */}
                       <div className="mb-3">
                         <QRCodeDisplay 
                           qrCodePath={option.qrCode} 
@@ -68,14 +68,14 @@ export const SupportButton: React.FC = () => {
                           size={128}
                         />
                       </div>
-                      <p className="text-gray-400 text-sm">
+                      <p className="text-gray-300 text-sm">
                         Scan QRIS di atas untuk donasi
                       </p>
                     </div>
                   )}
 
                   {option.details && (
-                    <div className="bg-gray-600 rounded-lg p-3">
+                    <div className="bg-gray-600 rounded-lg p-3 mt-3"> {/* Added mt-3 for spacing */}
                       <div className="space-y-1 text-sm">
                         <div className="flex justify-between">
                           <span className="text-gray-300">Bank:</span>
@@ -105,10 +105,10 @@ export const SupportButton: React.FC = () => {
               ))}
 
               <div className="text-center pt-4 border-t border-gray-600">
-                <p className="text-gray-400 text-sm">
+                <p className="text-gray-300 text-sm">
                   {supportConfig.thankYouMessage}
                 </p>
-                <p className="text-gray-500 text-xs mt-1">
+                <p className="text-gray-400 text-xs mt-1">
                   {supportConfig.descriptionMessage}
                 </p>
               </div>
