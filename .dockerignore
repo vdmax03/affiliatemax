@@ -1,0 +1,13 @@
+# General
+.git
+*.log
+*.tmp
+
+# Node artifacts
+node_modules
+dist
+
+# PHP storage and secrets
+backend/storage
+backend/.env
+

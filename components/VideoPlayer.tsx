@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { DownloadIcon } from './icons/DownloadIcon';
 import { StopIcon } from './icons/StopIcon';
@@ -35,15 +34,15 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoUrl, onReset }) =
 
   return (
     <div className="text-center space-y-6">
-      <div className="bg-gray-800/50 border border-gray-700 rounded-2xl p-6 backdrop-blur-sm">
+      <div className="bg-gray-800/50 border border-gray-700 rounded-2xl p-6 backdrop-blur-sm shadow-lg"> {/* Added shadow-lg */}
         <h2 className="text-2xl font-bold text-gray-100 mb-4">🎬 Video Generated Successfully!</h2>
         
         {error ? (
-          <div className="text-red-400 bg-red-900/20 p-4 rounded-lg border border-red-500">
+          <div className="text-red-400 bg-red-900/20 p-4 rounded-lg border border-red-500 shadow-md"> {/* Added shadow-md */}
             <p>{error}</p>
             <button
               onClick={onReset}
-              className="mt-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg"
+              className="mt-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors"
             >
               Try Again
             </button>
@@ -78,14 +77,14 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoUrl, onReset }) =
               
               <button
                 onClick={onReset}
-                className="flex items-center gap-2 px-6 py-3 bg-gray-600 hover:bg-gray-700 text-white font-bold rounded-lg transition-colors"
+                className="flex items-center gap-2 px-6 py-3 bg-gray-700 text-gray-100 hover:bg-gray-600 font-bold rounded-lg transition-colors shadow-md" // Consistent button style, added shadow
               >
                 <StopIcon className="w-5 h-5" />
                 Generate New Video
               </button>
             </div>
             
-            <div className="text-sm text-gray-400 space-y-2">
+            <div className="text-sm text-gray-300 space-y-2">
               <p>💡 <strong>Tips:</strong></p>
               <ul className="text-left max-w-md mx-auto space-y-1">
                 <li>• Video sudah dioptimasi untuk social media</li>

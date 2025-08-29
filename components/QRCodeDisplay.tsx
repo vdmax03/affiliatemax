@@ -20,7 +20,7 @@ export const QRCodeDisplay: React.FC<QRCodeDisplayProps> = ({
   if (imageError) {
     return (
       <div 
-        className="bg-white p-4 rounded-lg inline-block"
+        className="bg-white p-4 rounded-lg inline-block shadow-md" // Added shadow-md
         style={{ width: size, height: size }}
       >
         <div 
@@ -29,8 +29,8 @@ export const QRCodeDisplay: React.FC<QRCodeDisplayProps> = ({
         >
           <div className="text-center">
             <div className="text-gray-500 text-4xl mb-2">📱</div>
-            <span className="text-gray-500 text-xs">QR Code</span>
-            <p className="text-gray-400 text-xs mt-1">Tidak tersedia</p>
+            <span className="text-gray-400 text-xs">QR Code</span>
+            <p className="text-gray-300 text-xs mt-1">Tidak tersedia</p>
           </div>
         </div>
       </div>
@@ -39,7 +39,7 @@ export const QRCodeDisplay: React.FC<QRCodeDisplayProps> = ({
 
   return (
     <div 
-      className="bg-white p-4 rounded-lg inline-block"
+      className="bg-white p-4 rounded-lg inline-block shadow-md" // Added shadow-md
       style={{ width: size, height: size }}
     >
       <img

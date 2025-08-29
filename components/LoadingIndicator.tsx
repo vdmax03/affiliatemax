@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect } from 'react';
-import { SparklesIcon } from './icons/SparklesIcon';
+import { SparklesIcon } from '../src/icons_fixed';
 
 export const LoadingIndicator: React.FC = () => {
   const [progress, setProgress] = useState(0);
@@ -41,15 +40,15 @@ export const LoadingIndicator: React.FC = () => {
   }, []);
 
   const tips = [
-    "💡 Gunakan gambar produk yang jelas dan berkualitas tinggi",
-    "🎯 Prompt yang detail akan menghasilkan video yang lebih baik",
-    "⏱️ Proses ini memakan waktu 2-5 menit tergantung kompleksitas",
-    "📱 Video akan dioptimasi untuk social media platforms"
+    'Gunakan gambar produk yang jelas dan berkualitas tinggi',
+    'Prompt yang detail akan menghasilkan video yang lebih baik',
+    'Proses ini memakan waktu 2–5 menit tergantung kompleksitas',
+    'Video akan dioptimasi untuk platform sosial media'
   ];
 
   return (
     <div className="text-center space-y-8 p-8">
-      <div className="bg-gray-800/50 border border-gray-700 rounded-2xl p-8 backdrop-blur-sm max-w-2xl mx-auto">
+      <div className="bg-gray-800/50 border border-gray-700 rounded-2xl p-8 backdrop-blur-sm max-w-2xl mx-auto shadow-lg">
         <div className="flex items-center justify-center gap-3 mb-6">
           <SparklesIcon className="w-8 h-8 text-indigo-400 animate-pulse" />
           <h2 className="text-2xl font-bold text-gray-100">Generating Your Video</h2>
@@ -58,7 +57,7 @@ export const LoadingIndicator: React.FC = () => {
 
         {/* Progress Bar */}
         <div className="mb-6">
-          <div className="flex justify-between text-sm text-gray-400 mb-2">
+          <div className="flex justify-between text-sm text-gray-300 mb-2">
             <span>Progress</span>
             <span>{Math.round(progress)}%</span>
           </div>
@@ -89,9 +88,9 @@ export const LoadingIndicator: React.FC = () => {
         </div>
 
         {/* Tips */}
-        <div className="bg-gray-700/30 rounded-lg p-4 border border-gray-600">
-          <h3 className="text-sm font-semibold text-gray-300 mb-3">💡 Tips for Better Results</h3>
-          <div className="space-y-2 text-sm text-gray-400">
+        <div className="bg-gray-700/30 rounded-lg p-4 border border-gray-600 shadow-md">
+          <h3 className="text-sm font-semibold text-gray-300 mb-3">Tips for Better Results</h3>
+          <div className="space-y-2 text-sm text-gray-300">
             {tips.map((tip, index) => (
               <div key={index} className="flex items-start gap-2">
                 <span className="text-indigo-400">•</span>
@@ -102,7 +101,7 @@ export const LoadingIndicator: React.FC = () => {
         </div>
 
         {/* Estimated Time */}
-        <div className="mt-6 text-sm text-gray-400">
+        <div className="mt-6 text-sm text-gray-300">
           <div className="flex items-center justify-center gap-2">
             <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></div>
             <span>Estimated time: 2-5 minutes</span>
@@ -112,3 +111,4 @@ export const LoadingIndicator: React.FC = () => {
     </div>
   );
 };
+

@@ -15,10 +15,24 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #111827;
-  color: #f3f4f6;
+  background-color: #111827; /* Darker background */
+  color: #f3f4f6; /* Light text */
   min-height: 100vh;
 }
+
+/* Ensure form controls inherit base typography/color */
+input, textarea, select, button, label {
+  color: inherit;
+  font: inherit;
+}
+
+/* Placeholder color for dark UI */
+::placeholder {
+  color: #9ca3af;
+  opacity: 1;
+}
+
+:root { color-scheme: dark; }
 
 #root {
   min-height: 100vh;
@@ -56,6 +70,7 @@ body {
 .text-red-600 { color: #dc2626; }
 .text-yellow-500 { color: #eab308; }
 .text-orange-500 { color: #f97316; }
+.text-indigo-300 { color: #a5b4fc; }
 
 .border-gray-700 { border-color: #374151; }
 .border-gray-600 { border-color: #4b5563; }
@@ -155,6 +170,8 @@ body {
 
 .shadow-lg { box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); }
 .shadow-2xl { box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); }
+.shadow-md { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); } /* Added shadow-md */
+
 
 .backdrop-blur-sm { backdrop-filter: blur(4px); }
 
@@ -172,6 +189,10 @@ body {
 .hover\:text-gray-300:hover { color: #d1d5db; }
 .hover\:text-white:hover { color: #ffffff; }
 .hover\:scale-105:hover { transform: scale(1.05); }
+.hover\:text-black:hover { color: #000000; } /* Added hover:text-black */
+/* Ensure icons keep size when parent font changes */
+svg { flex-shrink: 0; }
+
 
 .focus\:ring-2:focus { box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.5); }
 .focus\:ring-indigo-500:focus { box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.5); }

@@ -1,0 +1,16 @@
+import React from 'react';
+
+export const SoundWaveIcon: React.FC<React.SVGProps<SVGSVGElement>> = ({ className, ...rest }) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    fill="none"
+    viewBox="0 0 24 24"
+    strokeWidth={1.5}
+    stroke="currentColor"
+    className={`w-6 h-6 ${className ?? ''}`}
+    {...rest}
+  >
+    <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 7.5V16.5M12 4.5V19.5M15.75 7.5V16.5M4.5 12H19.5" />
+  </svg>
+);
+

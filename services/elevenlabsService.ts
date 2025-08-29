@@ -58,66 +58,43 @@ export const generateAudioWithElevenLabs = async (
     console.log('📦 [ElevenLabs] Audio response type:', typeof audio);
     console.log('📦 [ElevenLabs] Audio response:', audio);
 
-        // Convert audio to base64 using different approach
     let base64Audio: string;
     const conversionStart = Date.now();
     console.log('🔄 [ElevenLabs] Starting audio conversion...');
     
-    // Try to handle as ReadableStream first
-    try {
-      console.log('📖 [ElevenLabs] Attempting ReadableStream conversion...');
-      const chunks: Uint8Array[] = [];
-      const reader = (audio as any).getReader();
-      
-      let chunkCount = 0;
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-        chunkCount++;
-      }
-      
-      console.log('📦 [ElevenLabs] Received', chunkCount, 'chunks');
-      
-      // Combine all chunks
-      const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
-      console.log('📏 [ElevenLabs] Total audio size:', totalLength, 'bytes');
-      
-      const combined = new Uint8Array(totalLength);
-      let offset = 0;
-      for (const chunk of chunks) {
-        combined.set(chunk, offset);
-        offset += chunk.length;
-      }
-      
-      console.log('🔧 [ElevenLabs] Converting to base64...');
-      base64Audio = btoa(String.fromCharCode(...combined));
-      console.log('✅ [ElevenLabs] ReadableStream conversion successful');
-      
-    } catch (error) {
-      console.log('❌ [ElevenLabs] ReadableStream conversion failed:', error);
-      // Fallback: try to handle as ArrayBuffer or Blob
-      try {
-        console.log('🔄 [ElevenLabs] Attempting fallback conversion...');
-        let arrayBuffer: ArrayBuffer;
-        
-        if ((audio as any).arrayBuffer) {
-          console.log('📦 [ElevenLabs] Handling as Blob...');
-          arrayBuffer = await (audio as any).arrayBuffer();
-        } else {
-          console.log('📦 [ElevenLabs] Handling as ArrayBuffer...');
-          arrayBuffer = audio as unknown as ArrayBuffer;
-        }
-        
-        const uint8Array = new Uint8Array(arrayBuffer);
-        console.log('📏 [ElevenLabs] Fallback audio size:', uint8Array.length, 'bytes');
-        base64Audio = btoa(String.fromCharCode(...uint8Array));
-        console.log('✅ [ElevenLabs] Fallback conversion successful');
-      } catch (fallbackError) {
-        console.error('❌ [ElevenLabs] All conversion methods failed:', fallbackError);
-        throw new Error('Failed to convert audio to base64');
-      }
+    // Handle as ReadableStream
+    const chunks: Uint8Array[] = [];
+    const reader = (audio as any).getReader();
+    
+    let chunkCount = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      chunkCount++;
     }
+    
+    console.log('📦 [ElevenLabs] Received', chunkCount, 'chunks');
+    
+    // Combine all chunks
+    const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
+    console.log('📏 [ElevenLabs] Total audio size:', totalLength, 'bytes');
+    
+    const combined = new Uint8Array(totalLength);
+    let offset = 0;
+    for (const chunk of chunks) {
+      combined.set(chunk, offset);
+      offset += chunk.length;
+    }
+    
+    // Convert combined Uint8Array to base64 using a loop to avoid stack limits
+    console.log('🔧 [ElevenLabs] Converting to base64...');
+    let binaryStringForBtoa = '';
+    for (let i = 0; i < combined.byteLength; i++) {
+        binaryStringForBtoa += String.fromCharCode(combined[i]);
+    }
+    base64Audio = btoa(binaryStringForBtoa);
+    console.log('✅ [ElevenLabs] ReadableStream conversion successful');
     
     const conversionEnd = Date.now();
     console.log('⏱️ [ElevenLabs] Audio conversion completed in', conversionEnd - conversionStart, 'ms');

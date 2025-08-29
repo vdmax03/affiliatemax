@@ -41,9 +41,9 @@ export const supportOptions: SupportOption[] = [
 
 ### 2. Menambahkan QR Code QRIS
 
-1. **Buat QR Code QRIS** menggunakan aplikasi bank atau e-wallet Anda
-2. **Simpan file QR code** di folder `public/` dengan nama `qris-qr-code.png`
-3. **Update path** di `supportConfig.ts` jika menggunakan nama file yang berbeda
+1.  **Buat QR Code QRIS** menggunakan aplikasi bank atau e-wallet Anda
+2.  **Simpan file QR code** di folder `public/` dengan nama `qris-qr-code.png`
+3.  **Update path** di `supportConfig.ts` jika menggunakan nama file yang berbeda
 
 ### 3. Konfigurasi Tambahan
 
@@ -132,10 +132,10 @@ showSupportButton: false
 
 ## 📝 Tips
 
-1. **QR Code Quality**: Pastikan QR code memiliki resolusi yang baik (minimal 256x256px)
-2. **Testing**: Test semua link dan nomor rekening sebelum deploy
-3. **Backup**: Simpan backup QR code di tempat yang aman
-4. **Monitoring**: Pantau donasi yang masuk secara berkala
+1.  **QR Code Quality**: Pastikan QR code memiliki resolusi yang baik (minimal 256x256px)
+2.  **Testing**: Test semua link dan nomor rekening sebelum deploy
+3.  **Backup**: Simpan backup QR code di tempat yang aman
+4.  **Monitoring**: Pantau donasi yang masuk secara berkala
 
 ## 🐛 Troubleshooting
 
@@ -146,7 +146,6 @@ showSupportButton: false
 
 ### Tombol Support Tidak Muncul
 - Cek `showSupportButton: true` di config
-- Pastikan user sudah login (tombol hanya muncul setelah login)
 - Refresh browser dan cek console untuk error
 
 ### Link Saweria Tidak Bekerja
@@ -157,7 +156,7 @@ showSupportButton: false
 ## 📞 Support
 
 Jika ada masalah dengan setup support button, silakan:
-1. Cek console browser untuk error
-2. Pastikan semua konfigurasi sudah benar
-3. Test di browser yang berbeda
-4. Restart development server jika perlu
+1.  Cek console browser untuk error
+2.  Pastikan semua konfigurasi sudah benar
+3.  Test di browser yang berbeda
+4.  Restart development server jika perlu
