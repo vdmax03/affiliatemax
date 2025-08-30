@@ -5,6 +5,7 @@ import { LoadingIndicator } from './components/LoadingIndicator';
 import { VideoPlayer } from './components/VideoPlayer';
 import { SupportButton } from './components/SupportButton';
 import { generateVideo } from './services/geminiService';
+import { backendAvailable, createVideoJob, sseProgress, getJobStatus, listVideoHistory } from './services/backendService';
 import { GenerationStatus } from './types';
 import { WelcomeSplash } from './components/WelcomeSplash';
 
@@ -27,9 +28,30 @@ const App: React.FC = () => {
     setVideoUrl(null);
 
     try {
-      const url = await generateVideo(videoPrompt, imageBase64, aspectRatio);
-      setVideoUrl(url);
-      setStatus(GenerationStatus.SUCCESS);
+      if (backendAvailable && imageBase64) {
+        // Use backend slideshow video pipeline
+        const dataUrl = `data:image/png;base64,${imageBase64}`;
+        const resp = await createVideoJob('guest', [dataUrl], 3, 30, aspectRatio);
+        if (!resp.success || !resp.job) throw new Error(resp.error || 'Failed to create job');
+        const jobId = resp.job.id;
+        // Listen progress via SSE and fallback poll
+        const stop = sseProgress(jobId, async () => {
+          const st = await getJobStatus(jobId);
+          if (st.success && st.job && st.job.status === 'completed') {
+            stop();
+            if (st.job.video_url) setVideoUrl(st.job.video_url);
+            setStatus(GenerationStatus.SUCCESS);
+          } else if (st.success && st.job && st.job.status === 'failed') {
+            stop();
+            throw new Error(st.job.error || 'Job failed');
+          }
+        });
+      } else {
+        // Fallback to Gemini video API
+        const url = await generateVideo(videoPrompt, imageBase64, aspectRatio);
+        setVideoUrl(url);
+        setStatus(GenerationStatus.SUCCESS);
+      }
     } catch (err) {
       console.error(err);
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';

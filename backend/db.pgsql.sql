@@ -21,3 +21,24 @@ CREATE TABLE IF NOT EXISTS video_jobs (
 CREATE INDEX IF NOT EXISTS idx_video_jobs_user_created ON video_jobs (user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_video_jobs_status ON video_jobs (status);
 
+
+-- Image generations (persist T2I / I2I results)
+CREATE TABLE IF NOT EXISTS image_generations (
+  id UUID PRIMARY KEY,
+  user_id VARCHAR(191) NOT NULL,
+  mode VARCHAR(16) NOT NULL, -- text_to_image | image_to_image
+  prompt TEXT NOT NULL,
+  mime_type VARCHAR(64) NOT NULL,
+  image_url TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_image_generations_user_created ON image_generations(user_id, created_at DESC);
+
+-- Fuel status per user (optional UI metrics)
+CREATE TABLE IF NOT EXISTS fuel_status (
+  user_id VARCHAR(191) PRIMARY KEY,
+  fuel_active INTEGER NOT NULL DEFAULT 0,
+  fuel_expired INTEGER NOT NULL DEFAULT 0,
+  fuel_active_premium INTEGER NOT NULL DEFAULT 0,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

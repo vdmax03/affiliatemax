@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { DownloadIcon } from './icons/DownloadIcon';
 import { StopIcon } from './icons/StopIcon';
 
@@ -33,9 +33,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoUrl, onReset }) =
   };
 
   return (
-    <div className="text-center space-y-6">
-      <div className="bg-gray-800/50 border border-gray-700 rounded-2xl p-6 backdrop-blur-sm shadow-lg"> {/* Added shadow-lg */}
-        <h2 className="text-2xl font-bold text-gray-100 mb-4">🎬 Video Generated Successfully!</h2>
+    <div className="text-center space-y-4">
+      <div className="bg-gray-800/50 border border-gray-700 rounded-2xl p-4 backdrop-blur-sm shadow-lg">
+        <h2 className="text-xl font-bold text-gray-100 mb-3">Video Generated Successfully</h2>
         
         {error ? (
           <div className="text-red-400 bg-red-900/20 p-4 rounded-lg border border-red-500 shadow-md"> {/* Added shadow-md */}
@@ -48,12 +48,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoUrl, onReset }) =
             </button>
           </div>
         ) : (
-          <div className="space-y-4">
-            <div className="relative max-w-2xl mx-auto">
+          <div className="space-y-3">
+            <div className="relative max-w-md mx-auto">
               <video
                 src={videoUrl}
                 controls
-                className="w-full rounded-lg shadow-2xl"
+                className="w-full rounded-lg shadow-lg"
                 onPlay={() => setIsPlaying(true)}
                 onPause={() => setIsPlaying(false)}
                 onError={handleVideoError}
@@ -66,10 +66,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoUrl, onReset }) =
               )}
             </div>
             
-            <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
+            <div className="flex flex-col sm:flex-row gap-3 justify-center items-center">
               <button
                 onClick={handleDownload}
-                className="flex items-center gap-2 px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg transition-colors shadow-lg"
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition-colors shadow"
               >
                 <DownloadIcon className="w-5 h-5" />
                 Download Video
@@ -77,7 +77,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoUrl, onReset }) =
               
               <button
                 onClick={onReset}
-                className="flex items-center gap-2 px-6 py-3 bg-gray-700 text-gray-100 hover:bg-gray-600 font-bold rounded-lg transition-colors shadow-md" // Consistent button style, added shadow
+                className="flex items-center gap-2 px-4 py-2 bg-gray-700 text-gray-100 hover:bg-gray-600 font-semibold rounded-lg transition-colors shadow"
               >
                 <StopIcon className="w-5 h-5" />
                 Generate New Video
@@ -85,12 +85,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoUrl, onReset }) =
             </div>
             
             <div className="text-sm text-gray-300 space-y-2">
-              <p>💡 <strong>Tips:</strong></p>
+              <p>ðŸ’¡ <strong>Tips:</strong></p>
               <ul className="text-left max-w-md mx-auto space-y-1">
-                <li>• Video sudah dioptimasi untuk social media</li>
-                <li>• Gunakan tombol download untuk menyimpan</li>
-                <li>• Coba generate ulang dengan prompt berbeda</li>
-                <li>• Share hasil ke tim untuk feedback</li>
+                <li>â€¢ Video sudah dioptimasi untuk social media</li>
+                <li>â€¢ Gunakan tombol download untuk menyimpan</li>
+                <li>â€¢ Coba generate ulang dengan prompt berbeda</li>
+                <li>â€¢ Share hasil ke tim untuk feedback</li>
               </ul>
             </div>
           </div>

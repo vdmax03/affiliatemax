@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { CrownIcon, GeminiIcon, FilmIcon } from '../src/icons_fixed';
+import { backendAvailable, getFuelStatus } from '../services/backendService';
 
 interface HeaderProps {}
 
@@ -8,10 +9,16 @@ export const Header: React.FC<HeaderProps> = () => {
   const [apiKey, setApiKey] = useState('');
   const [isSaved, setIsSaved] = useState(false);
   const [showKey, setShowKey] = useState(false);
+  const [fuel, setFuel] = useState<{active:number, premium:number} | null>(null);
 
   useEffect(() => {
     const savedApiKey = localStorage.getItem('GEMINI_API_KEY');
     if (savedApiKey) setApiKey(savedApiKey);
+    if (backendAvailable) {
+      getFuelStatus('guest').then((res) => {
+        if (res?.success && res.fuel) setFuel({ active: res.fuel.fuel_active || 0, premium: res.fuel.fuel_active_premium || 0 });
+      }).catch(()=>{});
+    }
   }, []);
 
   const handleSaveApiKey = () => {
@@ -34,6 +41,14 @@ export const Header: React.FC<HeaderProps> = () => {
     <header className="bg-gray-800/50 border border-gray-700 rounded-2xl p-6 backdrop-blur-sm shadow-lg">
       <div className="flex flex-col lg:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-3">
+          {backendAvailable && (
+            <div className="flex items-center gap-2 px-3 py-1 bg-gray-700 rounded-full text-sm">
+              <span className="text-gray-300">Fuel:</span>
+              <span className="text-green-300 font-semibold">{fuel ? fuel.active : 0}</span>
+              <span className="text-yellow-300">/</span>
+              <span className="text-purple-300 font-semibold">{fuel ? fuel.premium : 0}</span>
+            </div>
+          )}
           <FilmIcon className="w-8 h-8 text-indigo-400" />
           <h1 className="text-2xl font-bold text-gray-100">Veo 2 Generator</h1>
           <div className="flex items-center gap-1 px-2 py-1 bg-gray-700 rounded-full text-xs">

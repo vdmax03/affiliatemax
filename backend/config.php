@@ -72,5 +72,7 @@ define('MAX_IMAGES', 30); // safety cap
 foreach ([STORAGE_PATH, STORAGE_PATH . '/jobs'] as $dir) {
     if (!is_dir($dir)) @mkdir($dir, 0775, true);
 }
+// Ensure images folder for T2I/I2I
+if (!is_dir(STORAGE_PATH . '/images')) @mkdir(STORAGE_PATH . '/images', 0775, true);
 
 ?>

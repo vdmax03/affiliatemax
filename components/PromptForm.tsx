@@ -1,7 +1,8 @@
-import React, { useState, useCallback, useRef } from 'react';
+﻿import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { UploadIcon, SparklesIcon, DownloadIcon, SoundWaveIcon, ExternalLinkIcon } from '../src/icons_fixed';
 import { ImageUploadBox } from './ImageUploadBox';
 import { PromptTutorial } from './PromptTutorial';
+import { VideoHistory } from './VideoHistory';
 import {
   generateAdNarrative,
   generateImageVariations,
@@ -34,13 +35,15 @@ type Asset = {
 };
 
 export const PromptForm: React.FC<PromptFormProps> = ({ onSubmit, isLoading }) => {
-  const [generationMode, setGenerationMode] = useState<'imageToVideo' | 'textToImage'>('imageToVideo');
+  const [generationMode, setGenerationMode] = useState<'textToImage' | 'imageToImage'>('textToImage');
   const [videoPrompt, setVideoPrompt] = useState('');
   const [videoPromptVariations, setVideoPromptVariations] = useState<string[]>([]);
   const [audioScript, setAudioScript] = useState('');
   const [logoName, setLogoName] = useState('');
   const [textImagePrompt, setTextImagePrompt] = useState('');
   const [imageToImagePrompt, setImageToImagePrompt] = useState('');
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   
   const [masterImageAssets, setMasterImageAssets] = useState<Asset[]>([]);
   const [secondaryImageAssets, setSecondaryImageAssets] = useState<Asset[]>([]);
@@ -86,6 +89,8 @@ export const PromptForm: React.FC<PromptFormProps> = ({ onSubmit, isLoading }) =
         setAudioScript('');
         setAudioUrl(null);
         setError(null);
+        // Auto fetch prompt suggestions from backend (tailored by image)
+        fetchPromptSuggestions(base64String).catch(()=>{});
         // No automatic prompt/script generation here, user will click "Generate Prompts & Script"
       };
       reader.readAsDataURL(file);
@@ -96,6 +101,7 @@ export const PromptForm: React.FC<PromptFormProps> = ({ onSubmit, isLoading }) =
         setVideoPromptVariations([]);
         setAudioScript('');
         setAudioUrl(null);
+        setSuggestions([]);
     }
   }, []);
 
@@ -117,6 +123,43 @@ export const PromptForm: React.FC<PromptFormProps> = ({ onSubmit, isLoading }) =
         setSelectedSecondaryAssetId(null);
     }
   }, []);
+
+  // Helpers
+  const getBackendBase = () => {
+    // Prefer VITE_BACKEND_BASE, else infer local backend when dev server used
+    const envBase = (import.meta as any).env?.VITE_BACKEND_BASE || '';
+    if (envBase) return envBase.replace(/\/$/, '');
+    try {
+      if (location.port === '5173') return `${location.protocol}//127.0.0.1:8080`;
+    } catch {}
+    return '';
+  };
+
+  const getApiKey = (): string => {
+    const ls = localStorage.getItem('GEMINI_API_KEY');
+    if (ls) return ls;
+    const win = (window as any).GEMINI_API_KEY;
+    return win || '';
+  };
+
+  const fetchPromptSuggestions = async (base64: string) => {
+    setSuggestionsLoading(true);
+    setSuggestions([]);
+    try {
+      const resp = await fetch(`${getBackendBase()}/api/suggest_prompts.php`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ images: [{ mimeType: 'image/png', data: base64 }], api_key: getApiKey() })
+      });
+      const json = await resp.json();
+      if (!resp.ok || !json.success) throw new Error(json.error || 'Failed to fetch');
+      setSuggestions(Array.isArray(json.suggestions) ? json.suggestions : []);
+    } catch (e) {
+      console.warn('Suggestion fetch failed', e);
+    } finally {
+      setSuggestionsLoading(false);
+    }
+  };
 
   const handleGeneratePromptsAndScript = useCallback(async () => {
     const originalImage = masterImageAssets.find(a => a.type === 'original' && a.role === 'master');
@@ -323,6 +366,14 @@ export const PromptForm: React.FC<PromptFormProps> = ({ onSubmit, isLoading }) =
         setError("A text prompt is required for Image to Image generation.");
         return;
     }
+    // Ensure API key is set in UI
+    try {
+      const key = localStorage.getItem('GEMINI_API_KEY') || (window as any).GEMINI_API_KEY || '';
+      if (!key) {
+        setError('Please set your Gemini API key from the header before generating.');
+        return;
+      }
+    } catch {}
     setIsGenerating(prev => ({ ...prev, imageToImage: true }));
     setError(null);
     try {
@@ -347,13 +398,16 @@ export const PromptForm: React.FC<PromptFormProps> = ({ onSubmit, isLoading }) =
 
   const handleSubmit = useCallback((event: React.FormEvent) => {
     event.preventDefault();
-    if (generationMode === 'imageToVideo') {
-        if (videoPrompt.trim() && !isLoading) {
+    if (generationMode === 'textToImage') {
+        // Use the big button to generate VIDEO instead of image
+        if (textImagePrompt.trim() && !isLoading) {
             const selectedAsset = masterImageAssets.find(a => a.id === selectedMasterAssetId);
-            onSubmit(videoPrompt, selectedAsset?.base64 || null, videoOutputAspectRatio);
+            // Map image aspect to video-safe aspect
+            const ar = imageOutputAspectRatio === '1:1' ? '9:16' : (imageOutputAspectRatio as '16:9' | '9:16');
+            onSubmit(textImagePrompt, selectedAsset?.base64 || null, ar);
         }
-    } else if (generationMode === 'textToImage') {
-        handleGenerateImageFromText();
+    } else if (generationMode === 'imageToImage') {
+        handleGenerateImageToImage();
     }
   }, [generationMode, videoPrompt, isLoading, masterImageAssets, selectedMasterAssetId, onSubmit, videoOutputAspectRatio, handleGenerateImageFromText]);
   
@@ -387,24 +441,24 @@ export const PromptForm: React.FC<PromptFormProps> = ({ onSubmit, isLoading }) =
             <div className="flex gap-2">
                 <button 
                     type="button" 
-                    onClick={() => setGenerationMode('imageToVideo')}
-                    className={`px-4 py-2 rounded-lg text-sm transition-colors ${generationMode === 'imageToVideo' ? 'bg-indigo-600 text-white' : 'bg-gray-700 text-white hover:bg-gray-500 hover:text-black'}`}
-                    disabled={allLoading}
-                >
-                    Image to Video
-                </button>
-                <button 
-                    type="button" 
                     onClick={() => setGenerationMode('textToImage')}
                     className={`px-4 py-2 rounded-lg text-sm transition-colors ${generationMode === 'textToImage' ? 'bg-indigo-600 text-white' : 'bg-gray-700 text-white hover:bg-gray-500 hover:text-black'}`}
                     disabled={allLoading}
                 >
                     Text to Image
                 </button>
+                <button 
+                    type="button" 
+                    onClick={() => setGenerationMode('imageToImage')}
+                    className={`px-4 py-2 rounded-lg text-sm transition-colors ${generationMode === 'imageToImage' ? 'bg-indigo-600 text-white' : 'bg-gray-700 text-white hover:bg-gray-500 hover:text-black'}`}
+                    disabled={allLoading}
+                >
+                    Image to Image
+                </button>
             </div>
         </div>
 
-        {generationMode === 'imageToVideo' && (
+        {generationMode === 'imageToImage' && (
             <>
                 {/* Image to Image Prompt */}
                 <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4 space-y-4 shadow-md">
@@ -417,6 +471,20 @@ export const PromptForm: React.FC<PromptFormProps> = ({ onSubmit, isLoading }) =
                         className="w-full h-24 p-3 bg-gray-700/50 border border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 placeholder-gray-300 text-gray-100"
                         disabled={allLoading || !hasMasterOriginal}
                     />
+                    {/* Auto suggestions under I2I prompt */}
+                    <div>
+                        {suggestionsLoading ? (
+                            <div className="text-gray-400 text-sm">Loading suggestionsâ€¦</div>
+                        ) : suggestions.length > 0 ? (
+                            <div className="flex flex-wrap gap-2">
+                                {suggestions.map((s, i) => (
+                                    <button key={i} type="button" onClick={() => setImageToImagePrompt(s)} className="px-3 py-1 rounded-full text-xs bg-gray-700 hover:bg-gray-600 text-gray-200">{s}</button>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="text-xs text-gray-500">Upload a master image to see smart prompt suggestions.</div>
+                        )}
+                    </div>
                     <div className="flex flex-wrap gap-2">
                         <button type="button" onClick={handleGenerateImageToImage} disabled={allLoading || !hasMasterOriginal || !imageToImagePrompt.trim()} className="flex-grow flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-50 text-sm">
                             {isGenerating.imageToImage ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <SparklesIcon className="w-4 h-4" />}
@@ -431,15 +499,8 @@ export const PromptForm: React.FC<PromptFormProps> = ({ onSubmit, isLoading }) =
                 {/* Upload Source Images */}
                 <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4 space-y-4 shadow-md">
                     <h3 className="text-lg font-semibold text-gray-200">Upload Source Images</h3>
-                    <ImageUploadBox
-                        label="Master Product Image"
-                        onFileChange={handleMasterImageChange}
-                        fileInputRef={masterFileInputRef}
-                        disabled={allLoading}
-                        currentImagePreview={masterImagePreview}
-                    />
-                    <ImageUploadBox
-                        label="Secondary Product Image (Optional for Shop-the-Look)"
+                    <ImageUploadBox label="Master Product Image" onFileChange={handleMasterImageChange} fileInputRef={masterFileInputRef} disabled={allLoading} currentImagePreview={masterImagePreview} />
+                    <ImageUploadBox label="Secondary Product Image (Optional for Shop-the-Look)"
                         onFileChange={handleSecondaryImageChange}
                         fileInputRef={secondaryFileInputRef}
                         disabled={allLoading}
@@ -670,22 +731,27 @@ export const PromptForm: React.FC<PromptFormProps> = ({ onSubmit, isLoading }) =
         <div className="flex flex-col sm:flex-row gap-4 items-center">
             <button 
                 type="submit" 
-                disabled={allLoading || 
-                          (generationMode === 'imageToVideo' && (!videoPrompt || !selectedMasterAssetId)) || 
-                          (generationMode === 'textToImage' && !textImagePrompt)} 
+                disabled={allLoading || (generationMode === 'textToImage' && !textImagePrompt) || (generationMode === 'imageToImage')}
                 className="w-full flex items-center justify-center gap-3 py-3 px-6 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold text-lg rounded-lg shadow-lg transform hover:scale-105 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:scale-100"
             >
-                {allLoading ? (<><div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>Generating...</>) : (<><SparklesIcon className="w-6 h-6" />{generationMode === 'imageToVideo' ? 'Generate Video' : 'Generate Image'}</>)}
+                {allLoading ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <SparklesIcon className="w-6 h-6" />
+                    Generate Video
+                  </>
+                )}
             </button>
             <div className="flex-shrink-0 flex items-center gap-2">
                 <a href="https://labs.google/fx/tools/flow" target="_blank" rel="noopener noreferrer" className="p-2 bg-gray-700 text-gray-300 hover:bg-gray-600 hover:text-white rounded-lg transition-colors" title="Open in Flow">
                     <ExternalLinkIcon className="w-5 h-5" />
                 </a>
                 <a 
-                    href={`https://gemini.google.com/?prompt=${encodeURIComponent(
-                        generationMode === 'imageToVideo' ? videoPrompt : 
-                        textImagePrompt
-                    )}`} 
+                    href={`https://gemini.google.com/?prompt=${encodeURIComponent(textImagePrompt)}`} 
                     target="_blank" 
                     rel="noopener noreferrer" 
                     className={`p-2 bg-gray-700 text-gray-300 hover:bg-gray-600 hover:text-white rounded-lg transition-colors ${
@@ -706,7 +772,7 @@ export const PromptForm: React.FC<PromptFormProps> = ({ onSubmit, isLoading }) =
         {/* Generated Images (Selected Asset) */}
         <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4 space-y-4 shadow-md">
             <h3 className="text-lg font-semibold text-gray-200">Generated Images</h3>
-            <div className="w-full h-64 bg-gray-700 rounded-lg flex items-center justify-center overflow-hidden">
+            <div className="w-full h-48 bg-gray-700 rounded-lg flex items-center justify-center overflow-hidden">
                 {selectedMasterAsset ? (
                     <img src={selectedMasterAsset.preview} alt={selectedMasterAsset.label} className="w-full h-full object-contain" />
                 ) : (
@@ -756,6 +822,9 @@ export const PromptForm: React.FC<PromptFormProps> = ({ onSubmit, isLoading }) =
                 </div>
             </div>
         )}
+
+        {/* Backend Video History */}
+        <VideoHistory />
 
         {/* Prompt Tutorial */}
         <PromptTutorial />
