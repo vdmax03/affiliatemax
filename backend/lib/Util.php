@@ -2,9 +2,21 @@
 
 class Util {
     public static function cors() {
-        header('Access-Control-Allow-Origin: ' . ALLOWED_ORIGINS);
+        header('Vary: Origin');
+        $allowed = rtrim(ALLOWED_ORIGINS, '/');
+        $reqOrigin = isset($_SERVER['HTTP_ORIGIN']) ? rtrim((string)$_SERVER['HTTP_ORIGIN'], '/') : '';
+        if ($allowed === '*' || $allowed === '') {
+            header('Access-Control-Allow-Origin: *');
+        } else {
+            // Return exact request origin when it matches (ignoring trailing slash)
+            if ($reqOrigin !== '' && strcasecmp($allowed, $reqOrigin) === 0) {
+                header('Access-Control-Allow-Origin: ' . $reqOrigin);
+            } else {
+                header('Access-Control-Allow-Origin: ' . $allowed);
+            }
+        }
         header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-        header('Access-Control-Allow-Headers: Content-Type');
+        header('Access-Control-Allow-Headers: Content-Type, X-Requested-With, Authorization');
         if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
             http_response_code(204);
             exit;
