@@ -18,7 +18,7 @@ const App: React.FC = () => {
   const [jobProgress, setJobProgress] = useState<number>(0);
   const [stopStream, setStopStream] = useState<(() => void) | null>(null);
 
-  type JobTracker = { id: string; status: string; progress: number; video_url?: string | null; created_at?: string };
+  type JobTracker = { id: string; status: string; progress: number; video_url?: string | null; created_at?: string; prompt?: string };
   const [activeJobs, setActiveJobs] = useState<JobTracker[]>([]);
   const [logs, setLogs] = useState<string[]>([]);
   const pushLog = (m: string) => {
@@ -57,7 +57,7 @@ const App: React.FC = () => {
         setJobId(jobId);
         setJobStatus(resp.job.status || 'queued');
         setJobProgress(resp.job.progress || 0);
-        setActiveJobs((prev) => [{ id: jobId, status: resp.job.status || 'queued', progress: resp.job.progress || 0, created_at: resp.job.created_at }, ...prev]);
+        setActiveJobs((prev) => [{ id: jobId, status: resp.job.status || 'queued', progress: resp.job.progress || 0, created_at: resp.job.created_at, prompt: videoPrompt }, ...prev]);
         // Listen progress via SSE and update UI
         let finalizingChecked = false;
         const stop = sseProgress(jobId, (data: any) => {
@@ -201,12 +201,27 @@ const App: React.FC = () => {
           {activeJobs.map((j) => {
             const pct = Math.max(0, Math.min(100, j.progress || 0));
             const label = j.status === 'queued' ? 'Dalam Antrian' : j.status === 'processing' ? 'Memproses' : j.status;
+            const totalSeg = 2;
+            const currentSeg = j.status === 'completed' ? totalSeg : (pct >= 70 ? 2 : 1);
             return (
               <div key={j.id} className="border border-gray-700 rounded p-3 bg-gray-900/40">
                 <div className="flex items-center justify-between mb-1">
                   <div className="text-xs text-gray-300">ID: <span className="font-mono text-gray-100">{j.id}</span></div>
-                  <div className="text-xs px-2 py-0.5 rounded-full bg-gray-700 text-gray-200 border border-gray-600">{label}</div>
+                  <div className="flex items-center gap-2">
+                    <div className="text-xs px-2 py-0.5 rounded-full bg-gray-700 text-gray-200 border border-gray-600">{label}</div>
+                    <div className="text-xs px-2 py-0.5 rounded-full bg-gray-800 text-gray-200 border border-gray-700">Segmen {currentSeg}/{totalSeg}</div>
+                  </div>
                 </div>
+                <details className="mb-2">
+                  <summary className="cursor-pointer text-sm text-gray-300">Prompt segmen (lihat)</summary>
+                  <div className="mt-2 text-sm text-gray-200 whitespace-pre-wrap">
+                    {j.prompt || '—'}
+                    <div className="mt-2 text-gray-300">— Segment {currentSeg}: {currentSeg === 1 ? 'Generating frames & motion' : (j.status === 'finalizing' || j.status === 'processing') ? 'Finalizing & optimizing' : j.status}</div>
+                  </div>
+                </details>
+                {(j.status === 'queued' || j.status === 'processing' || j.status === 'finalizing') && (
+                  <div className="mb-2 px-3 py-2 rounded bg-yellow-900/50 text-yellow-200 text-sm">Menghasilkan segmen… ⏳</div>
+                )}
                 <div className="flex items-center gap-2">
                   <div className="flex-1 w-full bg-gray-700 rounded-full h-2 overflow-hidden">
                     <div className="h-full bg-gradient-to-r from-indigo-500 to-purple-600 rounded-full transition-all" style={{ width: `${pct}%` }} />
