@@ -1,4 +1,4 @@
-﻿import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { UploadIcon, SparklesIcon, DownloadIcon, SoundWaveIcon, ExternalLinkIcon } from '../src/icons_fixed';
 import { ImageUploadBox } from './ImageUploadBox';
 import { PromptTutorial } from './PromptTutorial';
@@ -14,6 +14,7 @@ import {
   generateAudioFromText,
   generateImageFromText,
   generateImageToImage,
+  generateClothingTransfer,
 } from '../services/geminiService';
 import {
   generateAudioWithElevenLabs,
@@ -126,13 +127,9 @@ export const PromptForm: React.FC<PromptFormProps> = ({ onSubmit, isLoading }) =
 
   // Helpers
   const getBackendBase = () => {
-    // Prefer VITE_BACKEND_BASE, else infer local backend when dev server used
+    // Only use explicit env-configured backend; do not auto-fallback
     const envBase = (import.meta as any).env?.VITE_BACKEND_BASE || '';
-    if (envBase) return envBase.replace(/\/$/, '');
-    try {
-      if (location.port === '5173') return `${location.protocol}//127.0.0.1:8080`;
-    } catch {}
-    return '';
+    return envBase ? envBase.replace(/\/$/, '') : '';
   };
 
   const getApiKey = (): string => {
@@ -146,7 +143,12 @@ export const PromptForm: React.FC<PromptFormProps> = ({ onSubmit, isLoading }) =
     setSuggestionsLoading(true);
     setSuggestions([]);
     try {
-      const resp = await fetch(`${getBackendBase()}/api/suggest_prompts.php`, {
+      const base = getBackendBase();
+      if (!base) {
+        // Backend not configured; skip suggestions silently
+        return;
+      }
+      const resp = await fetch(`${base}/api/suggest_prompts.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ images: [{ mimeType: 'image/png', data: base64 }], api_key: getApiKey() })
@@ -186,15 +188,17 @@ export const PromptForm: React.FC<PromptFormProps> = ({ onSubmit, isLoading }) =
 
 
   const handleGenerateVariations = useCallback(async () => {
+    const latestI2I = [...masterImageAssets].reverse().find(a => a.type === 'image_to_image' && a.role === 'master');
     const originalImage = masterImageAssets.find(a => a.type === 'original' && a.role === 'master');
-    if (!originalImage) {
+    const source = latestI2I || originalImage;
+    if (!source) {
         setError("An uploaded master image is required to generate variations.");
         return;
     }
     setIsGenerating(prev => ({ ...prev, variations: true }));
     setError(null);
     try {
-        const results = await generateImageVariations(originalImage.base64, imageOutputAspectRatio);
+        const results = await generateImageVariations(source.base64, imageOutputAspectRatio);
         const newAssets: Asset[] = results.map((r, i) => ({
             id: `variation-${Date.now()}-${i}`,
             type: 'variation',
@@ -358,6 +362,7 @@ export const PromptForm: React.FC<PromptFormProps> = ({ onSubmit, isLoading }) =
 
   const handleGenerateImageToImage = useCallback(async () => {
     const masterOriginal = masterImageAssets.find(a => a.type === 'original' && a.role === 'master');
+    const secondaryOriginal = secondaryImageAssets.find(a => a.type === 'secondary_original' && a.role === 'secondary');
     if (!masterOriginal) {
         setError("An uploaded master image is required for Image to Image generation.");
         return;
@@ -377,13 +382,15 @@ export const PromptForm: React.FC<PromptFormProps> = ({ onSubmit, isLoading }) =
     setIsGenerating(prev => ({ ...prev, imageToImage: true }));
     setError(null);
     try {
-        const result = await generateImageToImage(masterOriginal.base64, imageToImagePrompt, imageOutputAspectRatio);
+        const result = secondaryOriginal
+          ? await generateClothingTransfer(masterOriginal.base64, secondaryOriginal.base64, imageToImagePrompt, imageOutputAspectRatio)
+          : await generateImageToImage(masterOriginal.base64, imageToImagePrompt, imageOutputAspectRatio);
         const newAsset: Asset = {
             id: `image-to-image-${Date.now()}`,
             type: 'image_to_image',
             preview: result.dataUrl,
             base64: result.base64,
-            label: 'Image-to-Image',
+            label: secondaryOriginal ? 'Clothing Transfer' : 'Image-to-Image',
             role: 'master',
         };
         setMasterImageAssets(prev => [...prev, newAsset]);
@@ -398,18 +405,12 @@ export const PromptForm: React.FC<PromptFormProps> = ({ onSubmit, isLoading }) =
 
   const handleSubmit = useCallback((event: React.FormEvent) => {
     event.preventDefault();
-    if (generationMode === 'textToImage') {
-        // Use the big button to generate VIDEO instead of image
-        if (textImagePrompt.trim() && !isLoading) {
-            const selectedAsset = masterImageAssets.find(a => a.id === selectedMasterAssetId);
-            // Map image aspect to video-safe aspect
-            const ar = imageOutputAspectRatio === '1:1' ? '9:16' : (imageOutputAspectRatio as '16:9' | '9:16');
-            onSubmit(textImagePrompt, selectedAsset?.base64 || null, ar);
-        }
-    } else if (generationMode === 'imageToImage') {
-        handleGenerateImageToImage();
-    }
-  }, [generationMode, videoPrompt, isLoading, masterImageAssets, selectedMasterAssetId, onSubmit, videoOutputAspectRatio, handleGenerateImageFromText]);
+    // Always prioritize video generation when the user clicks Generate Video.
+    const selectedAsset = masterImageAssets.find(a => a.id === selectedMasterAssetId) || masterImageAssets.find(a => a.type === 'original' && a.role === 'master');
+    // Derive video aspect ratio from Output Resolution selection.
+    const ar: '16:9' | '9:16' = imageOutputAspectRatio === '9:16' ? '9:16' : '16:9';
+    onSubmit(videoPrompt || '', selectedAsset?.base64 || null, ar);
+  }, [videoPrompt, masterImageAssets, selectedMasterAssetId, onSubmit, imageOutputAspectRatio]);
   
   const allLoading = isLoading || Object.values(isGenerating).some(Boolean);
   const hasLogo = masterImageAssets.some(a => a.type === 'logo');
@@ -432,17 +433,25 @@ export const PromptForm: React.FC<PromptFormProps> = ({ onSubmit, isLoading }) =
   }, [setImageToImagePrompt, setError]);
 
   return (
-    <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-3 gap-5">
       {/* Left Column: Inputs and Controls */}
-      <div className="lg:col-span-2 space-y-6">
+      <div className="lg:col-span-2 space-y-5">
+        {/* Workspace Header (no stepper) */}
+        <div className="rounded-xl bg-gray-800/40 border border-[#2a2f3a] p-3">
+          <div className="text-sm text-gray-300">Creator Workspace · All tools visible</div>
+        </div>
+        <div className="text-center py-6">
+          <h2 className="text-3xl font-extrabold tracking-widest text-gray-100">MODEL VIRTUAL</h2>
+          <p className="text-sm text-gray-300 mt-1">Coba produk secara Virtual.</p>
+        </div>
         {/* Generation Mode */}
-        <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4 shadow-md">
+        <div id="mode" className="rounded-xl bg-gray-800/40 border border-[#2a2f3a] p-4">
             <h3 className="text-lg font-semibold text-gray-200 mb-3">Generation Mode</h3>
             <div className="flex gap-2">
                 <button 
                     type="button" 
                     onClick={() => setGenerationMode('textToImage')}
-                    className={`px-4 py-2 rounded-lg text-sm transition-colors ${generationMode === 'textToImage' ? 'bg-indigo-600 text-white' : 'bg-gray-700 text-white hover:bg-gray-500 hover:text-black'}`}
+                    className={`px-4 py-2 rounded-lg text-sm transition-colors ${generationMode === 'textToImage' ? 'bg-indigo-600 text-white' : 'bg-gray-700 text-white hover:bg-gray-500 hover:text-white'}`}
                     disabled={allLoading}
                 >
                     Text to Image
@@ -450,7 +459,7 @@ export const PromptForm: React.FC<PromptFormProps> = ({ onSubmit, isLoading }) =
                 <button 
                     type="button" 
                     onClick={() => setGenerationMode('imageToImage')}
-                    className={`px-4 py-2 rounded-lg text-sm transition-colors ${generationMode === 'imageToImage' ? 'bg-indigo-600 text-white' : 'bg-gray-700 text-white hover:bg-gray-500 hover:text-black'}`}
+                    className={`px-4 py-2 rounded-lg text-sm transition-colors ${generationMode === 'imageToImage' ? 'bg-indigo-600 text-white' : 'bg-gray-700 text-white hover:bg-gray-500 hover:text-white'}`}
                     disabled={allLoading}
                 >
                     Image to Image
@@ -461,20 +470,20 @@ export const PromptForm: React.FC<PromptFormProps> = ({ onSubmit, isLoading }) =
         {generationMode === 'imageToImage' && (
             <>
                 {/* Image to Image Prompt */}
-                <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4 space-y-4 shadow-md">
+                <div id="i2i" className="rounded-xl bg-gray-800/40 border border-[#2a2f3a] p-4 space-y-4">
                     <h3 className="text-lg font-semibold text-gray-200">Image to Image Prompt</h3>
                     <textarea
                         id="image-to-image-prompt"
                         value={imageToImagePrompt}
                         onChange={(e) => setImageToImagePrompt(e.target.value)}
                         placeholder="Describe changes to the master image..."
-                        className="w-full h-24 p-3 bg-gray-700/50 border border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 placeholder-gray-300 text-gray-100"
+                        className="w-full h-24 p-3 bg-gray-700/50 border border-[#333845] rounded-lg focus:ring-2 focus:ring-indigo-500 placeholder-gray-300 text-gray-100"
                         disabled={allLoading || !hasMasterOriginal}
                     />
                     {/* Auto suggestions under I2I prompt */}
                     <div>
                         {suggestionsLoading ? (
-                            <div className="text-gray-400 text-sm">Loading suggestionsâ€¦</div>
+                            <div className="text-gray-400 text-sm">Loading suggestions�</div>
                         ) : suggestions.length > 0 ? (
                             <div className="flex flex-wrap gap-2">
                                 {suggestions.map((s, i) => (
@@ -497,15 +506,49 @@ export const PromptForm: React.FC<PromptFormProps> = ({ onSubmit, isLoading }) =
                 </div>
 
                 {/* Upload Source Images */}
-                <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4 space-y-4 shadow-md">
+                    <div id="upload-images" className="rounded-xl bg-gray-800/40 border border-[#2a2f3a] p-4 space-y-4"> 
                     <h3 className="text-lg font-semibold text-gray-200">Upload Source Images</h3>
-                    <ImageUploadBox label="Master Product Image" onFileChange={handleMasterImageChange} fileInputRef={masterFileInputRef} disabled={allLoading} currentImagePreview={masterImagePreview} />
-                    <ImageUploadBox label="Secondary Product Image (Optional for Shop-the-Look)"
-                        onFileChange={handleSecondaryImageChange}
-                        fileInputRef={secondaryFileInputRef}
-                        disabled={allLoading}
-                        currentImagePreview={secondaryImagePreview}
-                    />
+                    <ImageUploadBox label="Upload Produk" onFileChange={handleMasterImageChange} fileInputRef={masterFileInputRef} disabled={allLoading} currentImagePreview={masterImagePreview} />
+                    <ImageUploadBox label="Upload Model"
+                          onFileChange={handleSecondaryImageChange}
+                          fileInputRef={secondaryFileInputRef}
+                          disabled={allLoading}
+                          currentImagePreview={secondaryImagePreview}
+                       />
+                    {/* Generate Ad Variations moved here */}
+                    <div className="pt-2 space-y-3">
+                      <h4 className="font-semibold text-gray-200">Generate Ad Variations</h4>
+                      <div className="space-y-2">
+                        <label className="block text-sm font-medium text-gray-300">Resolution</label>
+                        <div className="grid grid-cols-3 gap-2">
+                          <button type="button" aria-pressed={imageOutputAspectRatio==='1:1'} onClick={() => setImageOutputAspectRatio('1:1')} disabled={allLoading} className={`py-2 px-4 text-sm rounded-lg transition-colors ${imageOutputAspectRatio === '1:1' ? 'bg-purple-600 text-white ring-2 ring-amber-400' : 'bg-gray-700 text-white hover:bg-gray-500 hover:text-white'}`}>1:1</button>
+                          <button type="button" aria-pressed={imageOutputAspectRatio==='16:9'} onClick={() => setImageOutputAspectRatio('16:9')} disabled={allLoading} className={`py-2 px-4 text-sm rounded-lg transition-colors ${imageOutputAspectRatio === '16:9' ? 'bg-purple-600 text-white ring-2 ring-amber-400' : 'bg-gray-700 text-white hover:bg-gray-500 hover:text-white'}`}>16:9</button>
+                          <button type="button" aria-pressed={imageOutputAspectRatio==='9:16'} onClick={() => setImageOutputAspectRatio('9:16')} disabled={allLoading} className={`py-2 px-4 text-sm rounded-lg transition-colors ${imageOutputAspectRatio === '9:16' ? 'bg-purple-600 text-white ring-2 ring-amber-400' : 'bg-gray-700 text-white hover:bg-gray-500 hover:text-white'}`}>9:16</button>
+                        </div>
+                      </div>
+                      <button type="button" onClick={handleGenerateVariations} disabled={allLoading} className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg disabled:opacity-50 w-full justify-center">
+                        {isGenerating.variations ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <SparklesIcon className="w-5 h-5" />}
+                        {isGenerating.variations ? 'Generating...' : 'Generate Variations'}
+                      </button>
+                      {masterImageAssets.filter(a => a.type === 'variation' && a.role === 'master').length > 0 && (
+                        <div className="pt-2 border-t border-[#333845]/50 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-semibold text-gray-200">Variation Results</span>
+                            <span className="text-xs text-gray-400">{masterImageAssets.filter(a => a.type==='variation' && a.role==='master').length} items</span>
+                          </div>
+                          <div className="grid grid-cols-3 gap-2 max-h-40 overflow-auto pr-1">
+                            {masterImageAssets.filter(a => a.type === 'variation' && a.role === 'master').map((v) => (
+                              <div key={v.id} className="relative group rounded overflow-hidden border border-[#333845] hover:border-indigo-500 cursor-pointer" onClick={() => setSelectedMasterAssetId(v.id)}>
+                                <img src={v.preview} alt={v.label} className="w-full h-20 object-cover" />
+                                <a href={v.preview} download={`variation-${v.label}.jpg`} className="absolute top-1 right-1 p-1 bg-black/60 rounded text-white opacity-0 group-hover:opacity-100 transition-opacity" aria-label="Download image" onClick={(e)=>e.stopPropagation()}>
+                                  <DownloadIcon className="w-4 h-4" />
+                                </a>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                 </div>
 
                 {/* Video Prompt & Audio Script */}
@@ -527,7 +570,7 @@ export const PromptForm: React.FC<PromptFormProps> = ({ onSubmit, isLoading }) =
                         value={videoPrompt}
                         onChange={(e) => setVideoPrompt(e.target.value)}
                         placeholder="Write your video prompt or generate one..."
-                        className="w-full h-28 p-3 bg-gray-700/50 border border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 placeholder-gray-300 text-gray-100"
+                        className="w-full h-28 p-3 bg-gray-700/50 border border-[#333845] rounded-lg focus:ring-2 focus:ring-indigo-500 placeholder-gray-300 text-gray-100"
                         required
                         disabled={allLoading}
                         />
@@ -541,7 +584,7 @@ export const PromptForm: React.FC<PromptFormProps> = ({ onSubmit, isLoading }) =
                                             key={index}
                                             onClick={() => setVideoPrompt(prompt)}
                                             disabled={allLoading}
-                                            className={`px-3 py-1 text-xs rounded-full transition-colors disabled:opacity-50 ${videoPrompt === prompt ? 'bg-indigo-600 text-white' : 'bg-gray-700 text-white hover:bg-gray-500 hover:text-black'}`}
+                                            className={`px-3 py-1 text-xs rounded-full transition-colors disabled:opacity-50 ${videoPrompt === prompt ? 'bg-indigo-600 text-white' : 'bg-gray-700 text-white hover:bg-gray-500 hover:text-white'}`}
                                         >
                                             {promptLabels[index] || `Suggestion ${index + 1}`}
                                         </button>
@@ -567,7 +610,7 @@ export const PromptForm: React.FC<PromptFormProps> = ({ onSubmit, isLoading }) =
                         value={audioScript}
                         onChange={(e) => setAudioScript(e.target.value)}
                         placeholder="Write your audio script or generate one..."
-                        className="w-full h-28 p-3 bg-gray-700/50 border border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 placeholder-gray-300 text-gray-100"
+                        className="w-full h-28 p-3 bg-gray-700/50 border border-[#333845] rounded-lg focus:ring-2 focus:ring-indigo-500 placeholder-gray-300 text-gray-100"
                         disabled={allLoading}
                         />
                     </div>
@@ -584,7 +627,7 @@ export const PromptForm: React.FC<PromptFormProps> = ({ onSubmit, isLoading }) =
                 </button>
 
                 {/* Audio Generation Options */}
-                <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4 space-y-4 shadow-md">
+                <div className="rounded-xl bg-gray-800/40 border border-[#2a2f3a] p-4 space-y-4">
                     <h3 className="text-lg font-semibold text-gray-200">Audio Generation</h3>
                     <div className="flex items-center gap-4">
                         <label className="flex items-center gap-2 text-sm text-gray-300">
@@ -592,7 +635,7 @@ export const PromptForm: React.FC<PromptFormProps> = ({ onSubmit, isLoading }) =
                             type="checkbox"
                             checked={useElevenLabs}
                             onChange={(e) => setUseElevenLabs(e.target.checked)}
-                            className="rounded border-gray-600 bg-gray-700 text-indigo-600 focus:ring-indigo-500"
+                            className="rounded border-[#333845] bg-gray-700 text-indigo-600 focus:ring-indigo-500"
                             />
                             Use ElevenLabs TTS (Better Quality)
                         </label>
@@ -607,7 +650,7 @@ export const PromptForm: React.FC<PromptFormProps> = ({ onSubmit, isLoading }) =
                             <select
                                 value={selectedVoice}
                                 onChange={(e) => setSelectedVoice(e.target.value)}
-                                className="w-full p-3 bg-gray-700/50 border border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 text-gray-100"
+                                className="w-full p-3 bg-gray-700/50 border border-[#333845] rounded-lg focus:ring-2 focus:ring-indigo-500 text-gray-100"
                             >
                                 {Object.entries(getAvailableVoices()).map(([name, id]) => (
                                 <option key={id} value={id}>
@@ -627,7 +670,7 @@ export const PromptForm: React.FC<PromptFormProps> = ({ onSubmit, isLoading }) =
 
                     {!useElevenLabs && (
                         <div className="space-y-3">
-                            <button type="button" onClick={handleGenerateAudio} disabled={allLoading || !audioScript} className="flex items-center gap-2 px-4 py-2 bg-gray-700 text-white hover:bg-gray-500 hover:text-black rounded-lg disabled:opacity-50 transition-colors">
+                            <button type="button" onClick={handleGenerateAudio} disabled={allLoading || !audioScript} className="flex items-center gap-2 px-4 py-2 bg-gray-700 text-white hover:bg-gray-500 hover:text-white rounded-lg disabled:opacity-50 transition-colors">
                             {isGenerating.audio ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <SoundWaveIcon className="w-5 h-5" />}
                             {isGenerating.audio ? 'Generating Voiceover...' : 'Generate Audio (Gemini TTS)'}
                             </button>
@@ -645,46 +688,23 @@ export const PromptForm: React.FC<PromptFormProps> = ({ onSubmit, isLoading }) =
                 </div>
 
                 {/* Generate Ad Variations & Creative Tools */}
-                {hasMasterOriginal && (
-                    <div className="grid md:grid-cols-2 gap-6">
-                        <div className="p-4 bg-gray-700/30 rounded-lg space-y-4 border border-gray-600 shadow-md">
-                            <h3 className="font-semibold text-gray-200">Generate Ad Variations</h3>
-                            <div className="space-y-2">
-                                <label className="block text-sm font-medium text-gray-300">Resolution</label>
-                                <div className="grid grid-cols-3 gap-2">
-                                    <button type="button" onClick={() => setImageOutputAspectRatio('1:1')} disabled={allLoading} className={`py-2 px-4 text-sm rounded-lg transition-colors ${imageOutputAspectRatio === '1:1' ? 'bg-purple-600 text-white' : 'bg-gray-700 text-white hover:bg-gray-500 hover:text-black'}`}>1:1</button>
-                                    <button type="button" onClick={() => setImageOutputAspectRatio('16:9')} disabled={allLoading} className={`py-2 px-4 text-sm rounded-lg transition-colors ${imageOutputAspectRatio === '16:9' ? 'bg-purple-600 text-white' : 'bg-gray-700 text-white hover:bg-gray-500 hover:text-black'}`}>16:9</button>
-                                    <button type="button" onClick={() => setImageOutputAspectRatio('9:16')} disabled={allLoading} className={`py-2 px-4 text-sm rounded-lg transition-colors ${imageOutputAspectRatio === '9:16' ? 'bg-purple-600 text-white' : 'bg-gray-700 text-white hover:bg-gray-500 hover:text-black'}`}>9:16</button>
-                                </div>
-                            </div>
-                            <button type="button" onClick={handleGenerateVariations} disabled={allLoading} className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg disabled:opacity-50 w-full justify-center">
-                                {isGenerating.variations ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <SparklesIcon className="w-5 h-5" />}
-                                {isGenerating.variations ? 'Generating...' : 'Generate Variations'}
-                            </button>
-                            {hasLogo && hasAvatar && (
-                                <div className="pt-4 mt-4 border-t border-gray-600/50">
-                                    <button type="button" onClick={handleGenerateSceneComposition} disabled={allLoading} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-teal-600 hover:bg-teal-700 rounded-lg disabled:opacity-50">
-                                        {isGenerating.sceneComposition ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <SparklesIcon className="w-5 h-5" />}
-                                        {isGenerating.sceneComposition ? 'Combining...' : 'Combine with Logo & Avatar'}
-                                    </button>
-                                </div>
-                            )}
-                        </div>
-                        <div className="p-4 bg-gray-700/30 rounded-lg space-y-4 border border-gray-600 shadow-md">
+                    {hasMasterOriginal && (
+                    <div id="tools" className="grid md:grid-cols-1 gap-6">
+                        <div className="p-4 bg-gray-700/30 rounded-lg space-y-4 border border-[#333845]">
                             <h3 className="font-semibold text-gray-200">Creative Tools</h3>
                             <div className="flex flex-wrap items-center gap-2">
-                                <input type="text" value={logoName} onChange={(e) => setLogoName(e.target.value)} placeholder="Your Brand Name" className="flex-grow p-2 text-sm bg-gray-700/50 border border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 placeholder-gray-300 text-gray-100" disabled={allLoading}/>
-                                <button type="button" onClick={handleGenerateLogo} disabled={allLoading || !logoName} className="flex-shrink-0 flex items-center gap-2 px-3 py-2 bg-gray-700 text-white hover:bg-gray-500 hover:text-black rounded-lg disabled:opacity-50 text-sm">
+                                <input type="text" value={logoName} onChange={(e) => setLogoName(e.target.value)} placeholder="Your Brand Name" className="flex-grow p-2 text-sm bg-gray-700/50 border border-[#333845] rounded-lg focus:ring-2 focus:ring-indigo-500 placeholder-gray-300 text-gray-100" disabled={allLoading}/>
+                                <button type="button" onClick={handleGenerateLogo} disabled={allLoading || !logoName} className="flex-shrink-0 flex items-center gap-2 px-3 py-2 bg-gray-700 text-white hover:bg-gray-500 hover:text-white rounded-lg disabled:opacity-50 text-sm">
                                     {isGenerating.logo ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <SparklesIcon className="w-4 h-4" />}
                                     {isGenerating.logo ? '...' : 'Generate Logo'}
                                 </button>
                             </div>
-                            <button type="button" onClick={handleGenerateAvatar} disabled={allLoading} className="flex items-center gap-2 px-4 py-2 bg-gray-700 text-white hover:bg-gray-500 hover:text-black rounded-lg disabled:opacity-50">
+                            <button type="button" onClick={handleGenerateAvatar} disabled={allLoading} className="flex items-center gap-2 px-4 py-2 bg-gray-700 text-white hover:bg-gray-500 hover:text-white rounded-lg disabled:opacity-50">
                                 {isGenerating.avatar ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <SparklesIcon className="w-5 h-5" />}
                                 {isGenerating.avatar ? 'Generating...' : 'Generate Avatar'}
                             </button>
                             {hasMasterOriginal && hasSecondaryOriginal && (
-                                <div className="pt-4 mt-4 border-t border-gray-600/50">
+                                <div className="pt-4 mt-4 border-t border-[#333845]/50">
                                     <button type="button" onClick={handleGenerateShopTheLook} disabled={allLoading} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-yellow-600 hover:bg-yellow-700 rounded-lg disabled:opacity-50">
                                         {isGenerating.shopTheLook ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <SparklesIcon className="w-5 h-5" />}
                                         {isGenerating.shopTheLook ? 'Generating...' : 'Shop-the-Look Flat Lay'}
@@ -698,16 +718,16 @@ export const PromptForm: React.FC<PromptFormProps> = ({ onSubmit, isLoading }) =
         )}
 
         {generationMode === 'textToImage' && (
-            <>
+          <>
                 {/* Text to Image Prompt */}
-                <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4 space-y-4 shadow-md">
+                <div className="rounded-xl bg-gray-800/40 border border-[#2a2f3a] p-4 space-y-4">
                     <h3 className="text-lg font-semibold text-gray-200">Text to Image Prompt</h3>
                     <textarea
                         id="text-image-prompt"
                         value={textImagePrompt}
                         onChange={(e) => setTextImagePrompt(e.target.value)}
                         placeholder="Describe the image you want to generate..."
-                        className="w-full h-32 p-3 bg-gray-700/50 border border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 placeholder-gray-300 text-gray-100"
+                        className="w-full h-32 p-3 bg-gray-700/50 border border-[#333845] rounded-lg focus:ring-2 focus:ring-indigo-500 placeholder-gray-300 text-gray-100"
                         required
                         disabled={allLoading}
                     />
@@ -715,29 +735,38 @@ export const PromptForm: React.FC<PromptFormProps> = ({ onSubmit, isLoading }) =
             </>
         )}
 
-        {/* Output Resolution */}
-        <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4 space-y-4 shadow-md">
+        {/* Step Controls (removed to keep all features visible) */}
+
+        {/* Video Aspect Ratio section removed; video now follows Output Resolution */}
+
+        {/* Output Resolution (Images) */}
+        <div id="output" className="relative z-10 rounded-xl bg-gray-800/40 border border-[#2a2f3a] p-4 space-y-4">
             <h3 className="text-lg font-semibold text-gray-200">Output Resolution</h3>
             <div className="grid grid-cols-3 gap-2">
-                <button type="button" onClick={() => setImageOutputAspectRatio('1:1')} disabled={allLoading} className={`py-2 px-4 rounded-lg text-sm transition-colors ${imageOutputAspectRatio === '1:1' ? 'bg-indigo-600 text-white' : 'bg-gray-700 text-white hover:bg-gray-500 hover:text-black'}`}>1:1 Square</button>
-                <button type="button" onClick={() => setImageOutputAspectRatio('16:9')} disabled={allLoading} className={`py-2 px-4 rounded-lg text-sm transition-colors ${imageOutputAspectRatio === '16:9' ? 'bg-indigo-600 text-white' : 'bg-gray-700 text-white hover:bg-gray-500 hover:text-black'}`}>16:9 Landscape</button>
-                <button type="button" onClick={() => setImageOutputAspectRatio('9:16')} disabled={allLoading} className={`py-2 px-4 rounded-lg text-sm transition-colors ${imageOutputAspectRatio === '9:16' ? 'bg-indigo-600 text-white' : 'bg-gray-700 text-white hover:bg-gray-500 hover:text-black'}`}>9:16 Portrait</button>
+                <button type="button" aria-pressed={imageOutputAspectRatio==='1:1'} onClick={() => setImageOutputAspectRatio('1:1')} disabled={allLoading} className={`py-2 px-4 rounded-lg text-sm transition-colors ${imageOutputAspectRatio === '1:1' ? 'bg-indigo-600 text-white ring-2 ring-amber-400' : 'bg-gray-700 text-white hover:bg-gray-500 hover:text-white'}`}>1:1 Square</button>
+                <button type="button" aria-pressed={imageOutputAspectRatio==='16:9'} onClick={() => setImageOutputAspectRatio('16:9')} disabled={allLoading} className={`py-2 px-4 rounded-lg text-sm transition-colors ${imageOutputAspectRatio === '16:9' ? 'bg-indigo-600 text-white ring-2 ring-amber-400' : 'bg-gray-700 text-white hover:bg-gray-500 hover:text-white'}`}>16:9 Landscape</button>
+                <button type="button" aria-pressed={imageOutputAspectRatio==='9:16'} onClick={() => setImageOutputAspectRatio('9:16')} disabled={allLoading} className={`py-2 px-4 rounded-lg text-sm transition-colors ${imageOutputAspectRatio === '9:16' ? 'bg-indigo-600 text-white ring-2 ring-amber-400' : 'bg-gray-700 text-white hover:bg-gray-500 hover:text-white'}`}>9:16 Portrait</button>
             </div>
         </div>
         
-        {error && <div className="text-red-400 text-sm bg-red-900/30 p-3 rounded-lg shadow-md">{error}</div>}
+        {error && <div className="text-red-400 text-sm bg-red-900/30 p-3 rounded-lg">{error}</div>}
 
         {/* Generate Button */}
-        <div className="flex flex-col sm:flex-row gap-4 items-center">
+        <div id="generate" className="relative z-20 flex flex-col sm:flex-row gap-4 items-center"> 
             <button 
                 type="submit" 
-                disabled={allLoading || (generationMode === 'textToImage' && !textImagePrompt) || (generationMode === 'imageToImage')}
-                className="w-full flex items-center justify-center gap-3 py-3 px-6 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold text-lg rounded-lg shadow-lg transform hover:scale-105 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:scale-100"
+                disabled={Object.values(isGenerating).some(Boolean) || !videoPrompt.trim()}
+                className="relative z-20 w-full flex items-center justify-center gap-3 py-3 px-6 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold text-lg rounded-lg shadow-lg transform hover:scale-105 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:scale-100"
             >
-                {allLoading ? (
+                {Object.values(isGenerating).some(Boolean) ? (
                   <>
                     <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    Generating...
+                    Working...
+                  </>
+                ) : isLoading ? (
+                  <>
+                    <SparklesIcon className="w-6 h-6" />
+                    Generate Another
                   </>
                 ) : (
                   <>
@@ -768,11 +797,11 @@ export const PromptForm: React.FC<PromptFormProps> = ({ onSubmit, isLoading }) =
       </div>
 
       {/* Right Column: Generated Images & Recent Generations */}
-      <div className="lg:col-span-1 space-y-6">
+      <div className="lg:col-span-1 space-y-5">
         {/* Generated Images (Selected Asset) */}
-        <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4 space-y-4 shadow-md">
+        <div className="rounded-xl bg-gray-800/40 border border-[#2a2f3a] p-4 space-y-4">
             <h3 className="text-lg font-semibold text-gray-200">Generated Images</h3>
-            <div className="w-full h-48 bg-gray-700 rounded-lg flex items-center justify-center overflow-hidden">
+            <div className="w-full h-32 md:h-40 bg-gray-700 rounded-lg flex items-center justify-center overflow-hidden">
                 {selectedMasterAsset ? (
                     <img src={selectedMasterAsset.preview} alt={selectedMasterAsset.label} className="w-full h-full object-contain" />
                 ) : (
@@ -795,7 +824,7 @@ export const PromptForm: React.FC<PromptFormProps> = ({ onSubmit, isLoading }) =
 
         {/* Recent Generations (Asset Gallery) */}
         {(masterImageAssets.length > 0 || secondaryImageAssets.length > 0) && (
-            <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4 space-y-4 shadow-md">
+            <div className="rounded-xl bg-gray-800/40 border border-[#2a2f3a] p-4 space-y-4">
                 <h3 className="text-lg font-semibold text-gray-200">Recent Generations</h3>
                 <div className="max-h-96 overflow-y-auto pr-2">
                     <div className="flex flex-wrap gap-3 justify-center">
@@ -832,3 +861,6 @@ export const PromptForm: React.FC<PromptFormProps> = ({ onSubmit, isLoading }) =
     </form>
   );
 };
+
+
+

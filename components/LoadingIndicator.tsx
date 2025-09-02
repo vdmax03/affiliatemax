@@ -48,7 +48,7 @@ export const LoadingIndicator: React.FC = () => {
 
   return (
     <div className="text-center space-y-8 p-8">
-      <div className="bg-gray-800/50 border border-gray-700 rounded-2xl p-8 backdrop-blur-sm max-w-2xl mx-auto shadow-lg">
+      <div className="rounded-xl bg-gray-800/40 border border-[#2a2f3a] p-8 max-w-2xl mx-auto">
         <div className="flex items-center justify-center gap-3 mb-6">
           <SparklesIcon className="w-8 h-8 text-indigo-400 animate-pulse" />
           <h2 className="text-2xl font-bold text-gray-100">Generating Your Video</h2>

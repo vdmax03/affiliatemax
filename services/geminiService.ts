@@ -1,5 +1,11 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
+// Lightweight console logger visible di F12
+const geminiShouldLog = () => {
+  try { return (localStorage.getItem('API_DEBUG') ?? '1') !== '0'; } catch { return true; }
+};
+const glog = (...args: any[]) => { if (geminiShouldLog()) { try { console.log('[GEMINI]', ...args); } catch {} } };
+
 // FIX: Get API key from localStorage or window object for dynamic API key management
 const getApiKey = (): string => {
   // Try localStorage first
@@ -47,12 +53,57 @@ const describeImageConcise = async (imageBase64: string): Promise<string> => {
     const ai = getAiClient();
     const imagePart = { inlineData: { mimeType: 'image/png', data: imageBase64 } };
     const prompt = "Describe the main product in this image concisely, in Indonesian. For example: 'sepasang sepatu kets putih' or 'sebotol serum perawatan kulit berwarna pink'.";
+    glog('describeImageConcise → gemini-2.5-flash');
     const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash', // Use gemini-2.5-flash for text analysis
         contents: { parts: [imagePart, { text: prompt }] },
     });
+    glog('describeImageConcise ← ok');
     return response.text.trim();
 };
+
+// Helper: coba beberapa model image jika model utama error (mis. 500)
+const IMAGE_MODELS = [
+  'gemini-2.5-flash-image-preview',
+  // Fallbacks (nama bisa berbeda di region/akun). Coba yang cepat dulu.
+  'imagen-3.0-fast-generate-001',
+  'imagen-3.0-generate-001',
+];
+
+async function generateImageFromParts(parts: any[]): Promise<{ mimeType: string; data: string }> {
+  const ai = getAiClient();
+  let lastErr: any = null;
+  for (const model of IMAGE_MODELS) {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        glog('image.gen →', model, 'try', attempt);
+        const r = await ai.models.generateContent({ model, contents: [{ role: 'user', parts }] });
+        const generatedImagePart = r.candidates?.[0]?.content?.parts?.find(
+          (p: any) => p.inlineData && p.inlineData.mimeType?.startsWith('image/')
+        );
+        if (generatedImagePart?.inlineData?.data) {
+          glog('image.gen ←', model, 'ok');
+          return { mimeType: generatedImagePart.inlineData.mimeType, data: generatedImagePart.inlineData.data };
+        }
+        // Jika tidak ada image tapi ada teks alasan
+        const finish = (r as any)?.candidates?.[0]?.finishReason;
+        const text = (r as any)?.text;
+        throw new Error(`No image in response. finish=${finish || 'unknown'} text=${text || ''}`);
+      } catch (e: any) {
+        lastErr = e;
+        const msg = e?.message || String(e);
+        glog('image.gen ✖', model, 'try', attempt, msg);
+        // backoff ringan hanya untuk 5xx
+        if ((msg.includes('500') || msg.includes('Internal') || msg.includes('unavailable')) && attempt < 2) {
+          await new Promise(res => setTimeout(res, 800 * attempt));
+          continue;
+        }
+        break;
+      }
+    }
+  }
+  throw lastErr || new Error('Image generation failed (no model succeeded)');
+}
 
 export const generateVisualPrompt = async (imageBase64: string): Promise<string[]> => {
     try {
@@ -274,49 +325,46 @@ export const generateImageVariations = async (imageBase64: string, aspectRatio: 
         const ai = getAiClient();
         const description = await describeImageConcise(imageBase64); // Use helper
 
+        const ratioLabel = aspectRatio === '9:16' ? 'vertical 9:16 composition' : aspectRatio === '16:9' ? 'wide 16:9 composition' : 'square 1:1 composition';
+
         const styles: { name: string, prompt: string }[] = [
             { 
                 name: 'Model (Female)', 
-                prompt: `Full body shot of a young beautiful Indonesian model wearing a hijab (muslimah style) elegantly using the ${description}. Professional fashion photography, clean background, bright lighting.` 
+                prompt: `Full body shot of a young beautiful Indonesian model wearing a hijab (muslimah style) elegantly using the ${description}. Professional fashion photography, clean background, bright lighting, ${ratioLabel}.` 
             },
             { 
                 name: 'Model (Male)', 
-                prompt: `Full body shot of a young handsome Indonesian model holding the ${description}. Professional commercial photography, minimalist setting, confident pose.` 
+                prompt: `Full body shot of a young handsome Indonesian model holding the ${description}. Professional commercial photography, minimalist setting, confident pose, ${ratioLabel}.` 
             },
             {
                 name: 'Aesthetic Flat Lay',
-                prompt: `Aesthetic flat lay of the ${description} arranged beautifully on a minimalist marble table. Soft, natural lighting and some subtle decorative elements related to the product.`
+                prompt: `Aesthetic flat lay of the ${description} arranged beautifully on a minimalist marble table. Soft, natural lighting and subtle decorative elements related to the product, ${ratioLabel}.`
             },
             {
                 name: 'Lifestyle Scene',
-                prompt: `Lifestyle product photography. The ${description} is placed on a wooden shelf in a bright, modern, and clean room, creating a realistic and appealing scene.`
-            }
+                prompt: `Lifestyle product photography. The ${description} is placed on a wooden shelf in a bright, modern, and clean room, creating a realistic and appealing scene, ${ratioLabel}.`
+            },
+            // New 12 preset looks (keeps all existing features, just more styles)
+            { name: 'Studio Pose', prompt: `Clean studio backdrop, full body studio pose showcasing the ${description}. Even softbox lighting, subtle floor shadow, crisp detail, ${ratioLabel}.` },
+            { name: 'Runway Walk', prompt: `High-fashion runway scene with catwalk lighting and shallow depth of field. Model walking confidently wearing/holding the ${description}, motion feel, ${ratioLabel}.` },
+            { name: 'Modern Look', prompt: `Minimal modern interior with neutral tones. Sophisticated styling that highlights the ${description}. Balanced composition and soft daylight, ${ratioLabel}.` },
+            { name: 'Seated Pose', prompt: `Seated pose on a simple bench or cube. Relaxed posture while featuring the ${description}. Soft key light and gentle rim light, ${ratioLabel}.` },
+            { name: 'Portrait Shot', prompt: `Tight portrait framing that focuses on face and the ${description}. Beauty lighting, creamy bokeh background, editorial look, ${ratioLabel}.` },
+            { name: 'Energetic Pose', prompt: `Dynamic energetic pose with movement, mid-air gesture or step. Emphasize the ${description}. High shutter clarity, bright backdrop, ${ratioLabel}.` },
+            { name: 'Streetwear', prompt: `Urban street scene with graffiti wall or city vibe. Casual streetwear styling highlighting the ${description}. Contrast lighting, gritty yet clean, ${ratioLabel}.` },
+            { name: 'Chic & Modern', prompt: `Chic contemporary fashion look. Soft luxury lighting, neutral background, polished styling to emphasize the ${description}, ${ratioLabel}.` },
+            { name: 'Evening Glam', prompt: `Evening glam atmosphere with warm bokeh lights. Elegant styling that complements the ${description}. Cinematic mood, ${ratioLabel}.` },
+            { name: 'Business Casual', prompt: `Bright office or co-working background. Business casual attire, confident expression, the ${description} presented professionally, ${ratioLabel}.` },
+            { name: 'Artsy & Edgy', prompt: `Artistic and edgy coffee shop or studio corner, creative angles and textures. The ${description} as a bold focal point, ${ratioLabel}.` },
+            { name: 'Cafe Casual', prompt: `Cozy cafe ambience with natural daylight. Casual friendly feel emphasizing the ${description}. Warm tones and shallow depth of field, ${ratioLabel}.` },
         ];
-        
         const imagePromises = styles.map(async (style) => {
-            const response = await ai.models.generateContent({
-                model: 'gemini-2.5-flash-image-preview',
-                contents: [{
-                    role: 'user',
-                    parts: [
-                        { inlineData: { mimeType: 'image/png', data: imageBase64 } },
-                        { text: style.prompt }
-                    ],
-                }],
-                // imageGenerationConfig removed as it's not a known property for GenerateContentParameters
-                // aspectRatio will be handled by the model's default or inferred from prompt/input
-            });
-
-            const generatedImagePart = response.candidates?.[0]?.content?.parts?.find(
-                (p) => p.inlineData && p.inlineData.mimeType.startsWith('image/')
-            );
-
-            if (!generatedImagePart?.inlineData) {
-                throw new Error('No image data received from Gemini for variation.');
-            }
-
-            const base64ImageBytes: string = generatedImagePart.inlineData.data;
-            const imageUrl = `data:${generatedImagePart.inlineData.mimeType};base64,${base64ImageBytes}`;
+            const result = await generateImageFromParts([
+              { inlineData: { mimeType: 'image/png', data: imageBase64 } },
+              { text: style.prompt }
+            ]);
+            const base64ImageBytes: string = result.data;
+            const imageUrl = `data:${result.mimeType};base64,${base64ImageBytes}`;
             return { style: style.name, base64: base64ImageBytes, dataUrl: imageUrl };
         });
 
@@ -344,31 +392,14 @@ export const generateSceneComposition = async (productBase64: string, logoBase64
         });
         const combinedPrompt = promptGenResponse.text;
         
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash-image-preview',
-            contents: [{
-                role: 'user',
-                parts: [
-                    productPart,
-                    logoPart,
-                    avatarPart,
-                    { text: combinedPrompt }
-                ],
-            }],
-            // imageGenerationConfig removed as it's not a known property for GenerateContentParameters
-            // aspectRatio will be handled by the model's default or inferred from prompt/input
-        });
-
-        const generatedImagePart = response.candidates?.[0]?.content?.parts?.find(
-            (p) => p.inlineData && p.inlineData.mimeType.startsWith('image/')
-        );
-
-        if (!generatedImagePart?.inlineData) {
-            throw new Error('No image data received from Gemini for scene composition.');
-        }
-
-        const base64ImageBytes: string = generatedImagePart.inlineData.data;
-        const imageUrl = `data:${generatedImagePart.inlineData.mimeType};base64,${base64ImageBytes}`;
+        const img = await generateImageFromParts([
+          productPart,
+          logoPart,
+          avatarPart,
+          { text: combinedPrompt }
+        ]);
+        const base64ImageBytes: string = img.data;
+        const imageUrl = `data:${img.mimeType};base64,${base64ImageBytes}`;
         return { base64: base64ImageBytes, dataUrl: imageUrl };
     } catch (error) {
         console.error("Gemini Scene Composition Error:", error);
@@ -500,27 +531,9 @@ export const generateShopTheLookFlatLay = async (image1Base64: string, image2Bas
 // New function for Text to Image generation
 export const generateImageFromText = async (prompt: string, aspectRatio: '1:1' | '16:9' | '9:16'): Promise<{ base64: string, dataUrl: string }> => {
     try {
-        const ai = getAiClient();
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash-image-preview',
-            contents: [{
-                role: 'user',
-                parts: [{ text: prompt }],
-            }],
-            // imageGenerationConfig removed as it's not a known property for GenerateContentParameters
-            // aspectRatio will be handled by the model's default or inferred from prompt/input
-        });
-
-        const generatedImagePart = response.candidates?.[0]?.content?.parts?.find(
-            (p) => p.inlineData && p.inlineData.mimeType.startsWith('image/')
-        );
-
-        if (!generatedImagePart?.inlineData) {
-            throw new Error('No image data received from Gemini for text-to-image generation.');
-        }
-
-        const base64ImageBytes: string = generatedImagePart.inlineData.data;
-        const imageUrl = `data:${generatedImagePart.inlineData.mimeType};base64,${base64ImageBytes}`;
+        const img = await generateImageFromParts([{ text: prompt }]);
+        const base64ImageBytes: string = img.data;
+        const imageUrl = `data:${img.mimeType};base64,${base64ImageBytes}`;
         return { base64: base64ImageBytes, dataUrl: imageUrl };
     } catch (error) {
         console.error("Gemini Text-to-Image Generation Error:", error);
@@ -531,47 +544,13 @@ export const generateImageFromText = async (prompt: string, aspectRatio: '1:1' |
 // New function for Image to Image generation
 export const generateImageToImage = async (imageBase64: string, prompt: string, aspectRatio: '1:1' | '16:9' | '9:16'): Promise<{ base64: string, dataUrl: string }> => {
     try {
-        const ai = getAiClient();
         const fullPrompt = `Based on the provided image, generate a new image with the following modifications: ${prompt}. The output must be only the modified image.`;
-        
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash-image-preview',
-            contents: [{
-                role: 'user',
-                parts: [
-                    { inlineData: { mimeType: 'image/png', data: imageBase64 } },
-                    { text: fullPrompt }
-                ],
-            }],
-            // imageGenerationConfig removed as it's not a known property for GenerateContentParameters
-            // aspectRatio will be handled by the model's default or inferred from prompt/input
-        });
-
-        const candidate = response.candidates?.[0];
-
-        if (!candidate) {
-            throw new Error('No candidate response received from Gemini. The prompt may have been blocked by safety filters.');
-        }
-
-        const generatedImagePart = candidate.content?.parts?.find(
-            (p) => p.inlineData && p.inlineData.mimeType.startsWith('image/')
-        );
-
-        if (!generatedImagePart?.inlineData) {
-            const textResponse = response.text;
-            const finishReason = candidate.finishReason;
-            let errorMessage = 'No image data received from Gemini for image-to-image generation.';
-            if (finishReason) {
-                errorMessage += ` Reason: ${finishReason}.`;
-            }
-            if (textResponse) {
-                errorMessage += ` The model responded with text: "${textResponse}"`;
-            }
-            throw new Error(errorMessage);
-        }
-
-        const base64ImageBytes: string = generatedImagePart.inlineData.data;
-        const imageUrl = `data:${generatedImagePart.inlineData.mimeType};base64,${base64ImageBytes}`;
+        const img = await generateImageFromParts([
+          { inlineData: { mimeType: 'image/png', data: imageBase64 } },
+          { text: fullPrompt }
+        ]);
+        const base64ImageBytes: string = img.data;
+        const imageUrl = `data:${img.mimeType};base64,${base64ImageBytes}`;
         return { base64: base64ImageBytes, dataUrl: imageUrl };
     } catch (error) {
         console.error("Gemini Image-to-Image Generation Error:", error);
@@ -632,5 +611,43 @@ export const generateVideo = async (prompt: string, imageBase64: string | null, 
         throw new Error(`Failed to generate video: ${error.message}`);
     }
     throw new Error("An unknown error occurred during video generation.");
+  }
+};
+
+// New: Clothing transfer using two images (model + product)
+export const generateClothingTransfer = async (
+  modelBase64: string,
+  productBase64: string,
+  prompt: string,
+  aspectRatio: '1:1' | '16:9' | '9:16'
+): Promise<{ base64: string, dataUrl: string }> => {
+  try {
+    const ai = getAiClient();
+    const ratioText = aspectRatio === '9:16' ? 'vertical 9:16 composition' : aspectRatio === '16:9' ? 'wide 16:9 composition' : 'square 1:1 composition';
+
+    const instruction = `You are given two images:
+1) MODEL: The person to keep. Preserve identity, face, hair, pose, body proportions, lighting and background.
+2) PRODUCT: The garment to transfer. Replace ONLY the visible upper-body clothing in the MODEL with the PRODUCT's garment (color, fabric, logo/print placement) while matching perspective and wrinkles realistically.
+
+Strict requirements:
+- Do not change the face, skin tone, hair, hands, or background.
+- Do not add extra accessories or texts beyond what exists on the PRODUCT garment.
+- Keep sleeves and neckline type consistent with PRODUCT.
+- Keep composition ${ratioText}.
+- High-resolution, photorealistic fashion photo.
+
+User adjustment: ${prompt || 'use the product design as-is on the model.'}`;
+
+    const img = await generateImageFromParts([
+      { inlineData: { mimeType: 'image/png', data: modelBase64 } },
+      { inlineData: { mimeType: 'image/png', data: productBase64 } },
+      { text: instruction },
+    ]);
+    const base64ImageBytes: string = img.data;
+    const imageUrl = `data:${img.mimeType};base64,${base64ImageBytes}`;
+    return { base64: base64ImageBytes, dataUrl: imageUrl };
+  } catch (error) {
+    console.error('Gemini Clothing Transfer Error:', error);
+    throw new Error(`Clothing transfer failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 };

@@ -67,6 +67,7 @@ define('ALLOWED_ORIGINS', getenv('ALLOWED_ORIGINS') ?: '*');
 
 // Misc
 define('MAX_IMAGES', 30); // safety cap
+define('MIGRATE_TOKEN', getenv('MIGRATE_TOKEN') ?: ''); // optional token to protect /api/migrate.php
 
 // Ensure storage subfolders exist
 foreach ([STORAGE_PATH, STORAGE_PATH . '/jobs'] as $dir) {
@@ -75,4 +76,4 @@ foreach ([STORAGE_PATH, STORAGE_PATH . '/jobs'] as $dir) {
 // Ensure images folder for T2I/I2I
 if (!is_dir(STORAGE_PATH . '/images')) @mkdir(STORAGE_PATH . '/images', 0775, true);
 
-?>
+// no closing tag

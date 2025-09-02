@@ -38,7 +38,7 @@ export const Header: React.FC<HeaderProps> = () => {
   const isApiKeyValid = apiKey.trim().length > 0;
 
   return (
-    <header className="bg-gray-800/50 border border-gray-700 rounded-2xl p-6 backdrop-blur-sm shadow-lg">
+    <header className="rounded-xl bg-gray-800/40 border border-[#2a2f3a] p-5">
       <div className="flex flex-col lg:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           {backendAvailable && (
@@ -50,10 +50,11 @@ export const Header: React.FC<HeaderProps> = () => {
             </div>
           )}
           <FilmIcon className="w-8 h-8 text-indigo-400" />
-          <h1 className="text-2xl font-bold text-gray-100">Veo 2 Generator</h1>
+          <h1 className="text-2xl font-bold text-gray-100">Virtual Affiliate Generator</h1>
+          <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-indigo-600/30 border border-[#2a2f3a] text-indigo-300"></span>
           <div className="flex items-center gap-1 px-2 py-1 bg-gray-700 rounded-full text-xs">
             <GeminiIcon className="w-4 h-4 text-green-400" />
-            <span className="text-gray-300">Powered by Gemini</span>
+            <span className="text-gray-300">Powered by VDMAX</span>
           </div>
         </div>
 
@@ -74,6 +75,13 @@ export const Header: React.FC<HeaderProps> = () => {
             <CrownIcon className="w-4 h-4 text-white" />
             <span className="text-xs font-bold text-white">PRO</span>
           </div>
+
+          {backendAvailable && (
+            <div className="flex items-center gap-1 px-3 py-1 bg-green-700/60 rounded-full text-xs border border-green-600">
+              <div className="w-2 h-2 rounded-full bg-green-300" />
+              <span className="text-green-200">Mode Antrian Aktif</span>
+            </div>
+          )}
         </div>
       </div>
 

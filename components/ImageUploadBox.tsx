@@ -22,8 +22,8 @@ export const ImageUploadBox: React.FC<ImageUploadBoxProps> = ({
     <div className="space-y-2">
       <label className="block text-sm font-medium text-gray-300">{label}</label>
       <div
-        className={`relative w-full h-32 border-2 border-dashed rounded-lg flex items-center justify-center cursor-pointer transition-colors p-2
-          ${disabled ? 'opacity-50 cursor-not-allowed bg-gray-700 border-gray-600' : 'bg-gray-700/50 border-gray-600 hover:border-indigo-500'}
+        className={`relative w-full h-28 md:h-32 border-2 border-dashed rounded-lg flex items-center justify-center cursor-pointer transition-colors p-2
+          ${disabled ? 'opacity-50 cursor-not-allowed bg-gray-700 border-[#333845]' : 'bg-gray-700/50 border-[#333845] hover:border-indigo-500'}
         `}
         onClick={() => !disabled && fileInputRef.current?.click()}
       >
@@ -36,7 +36,7 @@ export const ImageUploadBox: React.FC<ImageUploadBoxProps> = ({
           disabled={disabled}
         />
         {currentImagePreview ? (
-          <img src={currentImagePreview} alt="Preview" className="w-full h-full object-cover rounded-md" />
+          <img src={currentImagePreview} alt="Preview" className="w-full h-full object-contain rounded-md" />
         ) : (
           <div className="text-center text-gray-400">
             <UploadIcon className="w-8 h-8 mx-auto mb-1 text-indigo-400" />

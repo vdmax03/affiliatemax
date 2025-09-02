@@ -15,7 +15,14 @@ export const VideoHistory: React.FC = () => {
     setLoading(false);
   };
 
-  useEffect(() => { fetchHist(); }, []);
+  useEffect(() => {
+    fetchHist();
+    if (!backendAvailable) return;
+    const id = setInterval(fetchHist, 10000); // auto-refresh every 10s
+    const onVisibility = () => { if (document.visibilityState === 'visible') fetchHist(); };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => { clearInterval(id); document.removeEventListener('visibilitychange', onVisibility); };
+  }, []);
 
   if (!backendAvailable) return null;
 
@@ -30,9 +37,15 @@ export const VideoHistory: React.FC = () => {
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
           {items.map((it) => (
-            <a key={it.job_id} href={it.video_path ? it.video_path : '#'} target="_blank" rel="noopener noreferrer" className="block group border border-gray-700 rounded overflow-hidden">
-              {it.preview_path ? (
-                <img src={it.preview_path} className="w-full h-24 object-cover group-hover:opacity-90" />
+            <a
+              key={it.id || it.job_id}
+              href={it.video_url || it.video_path || '#'}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block group border border-gray-700 rounded overflow-hidden"
+            >
+              {it.preview_url || it.preview_path ? (
+                <img src={(it.preview_url || it.preview_path) as string} className="w-full h-24 object-cover group-hover:opacity-90" />
               ) : (
                 <div className="w-full h-24 bg-gray-700"></div>
               )}
@@ -43,4 +56,3 @@ export const VideoHistory: React.FC = () => {
     </div>
   );
 };
-

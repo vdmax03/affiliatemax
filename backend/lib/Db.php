@@ -23,5 +23,3 @@ class Db {
         return self::$pdo;
     }
 }
-
-?>

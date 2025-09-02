@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { DownloadIcon } from './icons/DownloadIcon';
 import { StopIcon } from './icons/StopIcon';
 
@@ -34,11 +34,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoUrl, onReset }) =
 
   return (
     <div className="text-center space-y-4">
-      <div className="bg-gray-800/50 border border-gray-700 rounded-2xl p-4 backdrop-blur-sm shadow-lg">
+      <div className="rounded-xl bg-gray-800/40 border border-[#2a2f3a] p-4">
         <h2 className="text-xl font-bold text-gray-100 mb-3">Video Generated Successfully</h2>
-        
+
         {error ? (
-          <div className="text-red-400 bg-red-900/20 p-4 rounded-lg border border-red-500 shadow-md"> {/* Added shadow-md */}
+          <div className="text-red-400 bg-red-900/20 p-4 rounded-lg border border-red-500">
             <p>{error}</p>
             <button
               onClick={onReset}
@@ -53,7 +53,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoUrl, onReset }) =
               <video
                 src={videoUrl}
                 controls
-                className="w-full rounded-lg shadow-lg"
+                className="w-full rounded-lg shadow-md"
                 onPlay={() => setIsPlaying(true)}
                 onPause={() => setIsPlaying(false)}
                 onError={handleVideoError}
@@ -65,32 +65,32 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ videoUrl, onReset }) =
                 </div>
               )}
             </div>
-            
+
             <div className="flex flex-col sm:flex-row gap-3 justify-center items-center">
               <button
                 onClick={handleDownload}
-                className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition-colors shadow"
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition-colors"
               >
                 <DownloadIcon className="w-5 h-5" />
                 Download Video
               </button>
-              
+
               <button
                 onClick={onReset}
-                className="flex items-center gap-2 px-4 py-2 bg-gray-700 text-gray-100 hover:bg-gray-600 font-semibold rounded-lg transition-colors shadow"
+                className="flex items-center gap-2 px-4 py-2 bg-gray-700 text-gray-100 hover:bg-gray-600 font-semibold rounded-lg transition-colors"
               >
                 <StopIcon className="w-5 h-5" />
                 Generate New Video
               </button>
             </div>
-            
+
             <div className="text-sm text-gray-300 space-y-2">
-              <p>ðŸ’¡ <strong>Tips:</strong></p>
-              <ul className="text-left max-w-md mx-auto space-y-1">
-                <li>â€¢ Video sudah dioptimasi untuk social media</li>
-                <li>â€¢ Gunakan tombol download untuk menyimpan</li>
-                <li>â€¢ Coba generate ulang dengan prompt berbeda</li>
-                <li>â€¢ Share hasil ke tim untuk feedback</li>
+              <p><strong>Tips:</strong></p>
+              <ul className="text-left max-w-md mx-auto space-y-1 list-disc list-inside">
+                <li>Video sudah dioptimasi untuk social media</li>
+                <li>Gunakan tombol download untuk menyimpan</li>
+                <li>Coba generate ulang dengan prompt berbeda</li>
+                <li>Bagikan hasil ke tim untuk feedback</li>
               </ul>
             </div>
           </div>
